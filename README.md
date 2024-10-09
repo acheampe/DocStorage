@@ -3,7 +3,7 @@
 
 ## Overview
 
-**DocStorage** is a simplified version of the on-going InfoVault project. It reflects a microservice architecture and allows users to register, store documents, search for them, and share documents with other registered users. This project does not utilize AWS services and instead relies on local storage and Python Flask for backend services.
+**DocStorage** is a simplified version of the on-going InfoVault project. It reflects a microservice architecture and allows users to register, store documents, search for them, and share documents with other registered users. This project does not utilize AWS services like infovault and instead relies on local storage for backend services.
 
 ## Tech Stack
 
