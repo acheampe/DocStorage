@@ -7,3 +7,9 @@ venv
 # env
 .env
 .env.*
+
+# generated keys
+*key.py 
+
+#ignore test account
+usertxt.txt
