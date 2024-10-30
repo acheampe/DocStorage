@@ -2,3 +2,5 @@ python-dotenv
 Flask
 Flask-SQLAlchemy
 psycopg2-binary
+bcrypt==4.0.1
+PyJWT
