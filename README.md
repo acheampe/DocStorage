@@ -35,31 +35,32 @@
 ```bash
 docstorage/
 │
-├── auth_service/          # Authentication microservice
-│   ├── app.py             # Main Flask app for auth
-│   └── ...
-│
-├── doc_mgmt_service/      # Document Management microservice
-│   ├── app.py             # Main Flask app or any that engineer is comfortable with
-│   └── ...
-│
-├── search_service/        # Search microservice
-│   ├── app.py             # Main Flask app or any that engineer is comfortable with
-│   └── ...
-│
-├── share_service/         # Share microservice
-│   ├── app.py             # Main Flask app or any that engineer is comfortable with
-│   └── ...
-│
-├── frontend/              # React frontend with Tailwind CSS
-│   ├── src/
-│   │   ├── components/    # React components
+├── backend/
+│   ├── auth_service/          # Authentication microservice
+│   │   ├── app/
+│   │   │   ├── __init__.py    # Flask app initialization
+│   │   │   ├── config.py      # Configuration settings
+│   │   │   ├── models/        # Database models
+│   │   │   └── routes/        # API endpoints
+│   │   ├── requirements.txt   # Python dependencies
+│   │   └── run.py            # Service entry point
+│   │
+│   ├── doc_mgmt_service/      # Document Management microservice
 │   │   └── ...
-│   └── ...
+│   │
+│   ├── search_service/        # Search microservice
+│   │   └── ...
+│   │
+│   └── share_service/         # Share microservice
+│   │   └── ...
+│   │
+├── frontend/                  # React frontend with Tailwind CSS
+│   ├── src/
+│   │   ├── components/        # React components
+│   │   └── ...
+│   └── package.json          # Frontend dependencies
 │
-├── README.md              # This README file
-├── requirements.txt       # Python dependencies
-└── package.json           # Frontend dependencies
+└── README.md                 # Project documentation
 ```
 
 ## Setup Instructions

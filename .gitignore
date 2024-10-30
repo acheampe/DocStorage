@@ -1,3 +1,9 @@
 # Ignore DocStorage Documents
 DocStorageDocuments
 
+# Venv
+venv 
+
+# env
+.env
+.env.*
