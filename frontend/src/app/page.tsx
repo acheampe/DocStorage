@@ -1,4 +1,7 @@
-export default function Home() {
+'use client'
+import React from 'react'
+
+  export default function Home() {
   return (
     <div>
       <h1>DocStorage</h1>
