@@ -1,0 +1,5 @@
+// provides linting for the frontend...to help with code quality with programming errors
+
+{
+  "extends": ["next/core-web-vitals", "next/typescript"]
+}

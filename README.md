@@ -34,33 +34,31 @@
 
 ```bash
 docstorage/
-│
-├── backend/
-│   ├── auth_service/          # Authentication microservice
+├── services/
+│   ├── auth_service/          # Authentication service
 │   │   ├── app/
-│   │   │   ├── __init__.py    # Flask app initialization
-│   │   │   ├── config.py      # Configuration settings
-│   │   │   ├── models/        # Database models
-│   │   │   └── routes/        # API endpoints
-│   │   ├── requirements.txt   # Python dependencies
-│   │   └── run.py            # Service entry point
-│   │
-│   ├── doc_mgmt_service/      # Document Management microservice
-│   │   └── ...
-│   │
-│   ├── search_service/        # Search microservice
-│   │   └── ...
-│   │
-│   └── share_service/         # Share microservice
-│   │   └── ...
-│   │
-├── frontend/                  # React frontend with Tailwind CSS
+│   │   │   ├── __init__.py
+│   │   │   ├── config.py
+│   │   │   ├── models/
+│   │   │   └── routes/
+│   │   ├── requirements.txt
+│   │   └── run.py
+│   ├── doc_mgmt_service/      # Future document service
+│   ├── search_service/        # Future search service
+│   └── share_service/         # Future share service
+├── frontend/                  # Next.js frontend
 │   ├── src/
-│   │   ├── components/        # React components
-│   │   └── ...
-│   └── package.json          # Frontend dependencies
-│
-└── README.md                 # Project documentation
+│   │   ├── app/
+│   │   └── components/
+│   ├── public/
+│   └── package.json
+├── database/                  # Database schemas
+│   └── AuthServiceDDL.sql
+├── DocStorageDocuments/       # Local storage
+├── main.py
+├── requirement.txt
+└── .gitignore
+
 ```
 
 ## Setup Instructions
