@@ -7,7 +7,7 @@ export default function Home() {
       {/* Left Section */}
       <div className="w-1/3 bg-navy p-8 flex flex-col items-center justify-center space-y-6 rounded-r-[25px] -ml-16 pl-16">
         <div className="absolute top-8 left-8">
-          <span className="material-symbols-rounded text-gold text-5xl">
+          <span className="material-symbols-rounded text-gold text-8xl">
             lock
           </span>
         </div>
