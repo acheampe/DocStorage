@@ -43,6 +43,7 @@ def proxy_request(service):
 @proxy_request('auth')
 def auth_service(path):
     return path
+
 # Document Service Routes
 @app.route('/docs/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE'])
 @proxy_request('docs')
