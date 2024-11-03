@@ -5,4 +5,3 @@ psycopg2-binary
 bcrypt==4.0.1
 PyJWT
 Flask-CORS
-Flask-JWT-Extended

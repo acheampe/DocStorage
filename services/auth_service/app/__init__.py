@@ -1,18 +1,23 @@
 from flask import Flask
-from flask_jwt_extended import JWTManager
 from .extensions import db
-from .routes.auth import auth_bp
-from config import Config
+from .config import Config
 
 def create_app():
     app = Flask(__name__)
+    
+    # Configure your app
     app.config.from_object(Config)
     
     # Initialize extensions
     db.init_app(app)
-    jwt = JWTManager(app)
     
-    # Register blueprints
-    app.register_blueprint(auth_bp)
-    
+    # Register blueprints - move these imports here to avoid circular imports
+    from .routes import main_bp, auth_bp
+    app.register_blueprint(main_bp)
+    app.register_blueprint(auth_bp, url_prefix='/auth')
+
+    # Create database tables
+    with app.app_context():
+        db.create_all()
+
     return app

@@ -5,11 +5,35 @@ import bcrypt
 import jwt
 import os
 from datetime import datetime, timedelta, timezone
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy.exc import IntegrityError
+from functools import wraps
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
+
+def jwt_required():
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            token = None
+            auth_header = request.headers.get('Authorization')
+            
+            if auth_header and auth_header.startswith('Bearer '):
+                token = auth_header.split(' ')[1]
+            
+            if not token:
+                return jsonify({'error': 'Token is missing'}), 401
+            
+            try:
+                payload = jwt.decode(token, os.getenv('SECRET_KEY'), algorithms=['HS256'])
+                current_user_id = payload['user_id']
+            except jwt.ExpiredSignatureError:
+                return jsonify({'error': 'Token has expired'}), 401
+            except jwt.InvalidTokenError:
+                return jsonify({'error': 'Invalid token'}), 401
+                
+            return f(*args, current_user_id=current_user_id, **kwargs)
+        return decorated_function
+    return decorator
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -59,8 +83,7 @@ def login():
 # Update Profile
 @auth_bp.route('/update-profile', methods=['PUT'])
 @jwt_required()
-def update_profile():
-    current_user_id = get_jwt_identity()
+def update_profile(current_user_id):
     data = request.get_json()
 
     # Verify required fields
