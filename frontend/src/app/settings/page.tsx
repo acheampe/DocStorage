@@ -41,10 +41,19 @@ export default function Settings() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (formData.new_password !== formData.confirm_password) {
-      setError('New passwords do not match');
+    
+    if (!formData.old_password) {
+      setError('Current password is required to make any changes');
       return;
     }
+
+    if (formData.new_password || formData.confirm_password) {
+      if (formData.new_password !== formData.confirm_password) {
+        setError('New passwords do not match');
+        return;
+      }
+    }
+    
     setShowConfirmModal(true);
   };
 
@@ -87,69 +96,86 @@ export default function Settings() {
         <form onSubmit={handleSubmit} className="space-y-6">
           {error && <p className="text-red-500 text-center">{error}</p>}
           
-          <div className="flex gap-4">
-            <div className="flex-1 relative">
-              <label className="absolute -top-3 left-4 bg-white px-2 text-navy font-medium">First Name</label>
+          <div className="space-y-6 mb-8">
+            <h2 className="text-2xl font-bold text-navy">Profile Information</h2>
+            
+            <div className="flex gap-4">
+              <div className="flex-1 relative">
+                <label className="absolute -top-3 left-4 bg-white px-2 text-navy font-medium">First Name</label>
+                <input
+                  type="text"
+                  value={formData.first_name}
+                  onChange={(e) => setFormData({...formData, first_name: e.target.value})}
+                  className="w-full p-4 border-4 border-gold border-opacity-45 rounded-2xl"
+                  required
+                />
+              </div>
+              <div className="flex-1 relative">
+                <label className="absolute -top-3 left-4 bg-white px-2 text-navy font-medium">Last Name</label>
+                <input
+                  type="text"
+                  value={formData.last_name}
+                  onChange={(e) => setFormData({...formData, last_name: e.target.value})}
+                  className="w-full p-4 border-4 border-gold border-opacity-45 rounded-2xl"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="relative">
+              <label className="absolute -top-3 left-4 bg-white px-2 text-navy font-medium">Email</label>
               <input
-                type="text"
-                value={formData.first_name}
-                onChange={(e) => setFormData({...formData, first_name: e.target.value})}
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({...formData, email: e.target.value})}
                 className="w-full p-4 border-4 border-gold border-opacity-45 rounded-2xl"
                 required
               />
             </div>
-            <div className="flex-1 relative">
-              <label className="absolute -top-3 left-4 bg-white px-2 text-navy font-medium">Last Name</label>
+
+            <div className="relative">
+              <label className="absolute -top-3 left-4 bg-white px-2 text-navy font-medium">
+                Current Password
+              </label>
               <input
-                type="text"
-                value={formData.last_name}
-                onChange={(e) => setFormData({...formData, last_name: e.target.value})}
+                type="password"
+                value={formData.old_password}
+                onChange={(e) => setFormData({...formData, old_password: e.target.value})}
                 className="w-full p-4 border-4 border-gold border-opacity-45 rounded-2xl"
                 required
               />
+              <p className="text-sm text-gray-600 mt-1">
+                * Required to save any changes to your profile
+              </p>
             </div>
           </div>
 
-          <div className="relative">
-            <label className="absolute -top-3 left-4 bg-white px-2 text-navy font-medium">Email</label>
-            <input
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({...formData, email: e.target.value})}
-              className="w-full p-4 border-4 border-gold border-opacity-45 rounded-2xl"
-              required
-            />
-          </div>
+          <div className="space-y-6 pt-6 border-t border-gray-200">
+            <h2 className="text-2xl font-bold text-navy">Change Password (Optional)</h2>
+            
+            <div className="relative">
+              <label className="absolute -top-3 left-4 bg-white px-2 text-navy font-medium">
+                New Password
+              </label>
+              <input
+                type="password"
+                value={formData.new_password}
+                onChange={(e) => setFormData({...formData, new_password: e.target.value})}
+                className="w-full p-4 border-4 border-gold border-opacity-45 rounded-2xl"
+              />
+            </div>
 
-          <div className="relative">
-            <label className="absolute -top-3 left-4 bg-white px-2 text-navy font-medium">Current Password</label>
-            <input
-              type="password"
-              value={formData.old_password}
-              onChange={(e) => setFormData({...formData, old_password: e.target.value})}
-              className="w-full p-4 border-4 border-gold border-opacity-45 rounded-2xl"
-              required
-            />
-          </div>
-
-          <div className="relative">
-            <label className="absolute -top-3 left-4 bg-white px-2 text-navy font-medium">New Password</label>
-            <input
-              type="password"
-              value={formData.new_password}
-              onChange={(e) => setFormData({...formData, new_password: e.target.value})}
-              className="w-full p-4 border-4 border-gold border-opacity-45 rounded-2xl"
-            />
-          </div>
-
-          <div className="relative">
-            <label className="absolute -top-3 left-4 bg-white px-2 text-navy font-medium">Confirm New Password</label>
-            <input
-              type="password"
-              value={formData.confirm_password}
-              onChange={(e) => setFormData({...formData, confirm_password: e.target.value})}
-              className="w-full p-4 border-4 border-gold border-opacity-45 rounded-2xl"
-            />
+            <div className="relative">
+              <label className="absolute -top-3 left-4 bg-white px-2 text-navy font-medium">
+                Confirm New Password
+              </label>
+              <input
+                type="password"
+                value={formData.confirm_password}
+                onChange={(e) => setFormData({...formData, confirm_password: e.target.value})}
+                className="w-full p-4 border-4 border-gold border-opacity-45 rounded-2xl"
+              />
+            </div>
           </div>
 
           <div className="flex justify-between gap-4">
