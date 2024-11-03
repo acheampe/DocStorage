@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify
-from app import db
+from ..extensions import db
 from sqlalchemy import text
 from .auth import auth_bp
 

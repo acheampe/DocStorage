@@ -4,9 +4,12 @@ from app.models.user import User
 import bcrypt
 import jwt
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy.exc import IntegrityError
 
-auth_bp = Blueprint('auth', __name__)
+auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -45,7 +48,7 @@ def login():
     
     token = jwt.encode({
         'user_id': user.user_id,
-        'exp': datetime.utcnow() + timedelta(days=1)
+        'exp': datetime.now(timezone.utc) + timedelta(days=1)
     }, os.getenv('SECRET_KEY'))
     
     return jsonify({
@@ -54,66 +57,59 @@ def login():
     }), 200
 
 # Update Profile
-@auth_bp.route('/profile', methods=['PUT'])
+@auth_bp.route('/update-profile', methods=['PUT'])
+@jwt_required()
 def update_profile():
-    # Get token from header
-    auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith('Bearer '):
-        return jsonify({'error': 'Missing or invalid token'}), 401
-    
-    token = auth_header.split(' ')[1]
-    try:
-        # Verify token and get user_id
-        payload = jwt.decode(token, os.getenv('SECRET_KEY'), algorithms=['HS256'])
-        user_id = payload['user_id']
-    except jwt.ExpiredSignatureError:
-        return jsonify({'error': 'Token has expired'}), 401
-    except jwt.InvalidTokenError:
-        return jsonify({'error': 'Invalid token'}), 401
-
-    # Get user from database
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify({'error': 'User not found'}), 404
-
+    current_user_id = get_jwt_identity()
     data = request.get_json()
-    
-    # Update basic info
-    if 'first_name' in data:
-        user.first_name = data['first_name']
-    if 'last_name' in data:
-        user.last_name = data['last_name']
-    
-    # Update email (with validation)
-    if 'email' in data:
-        if User.query.filter(User.email == data['email'], User.user_id != user_id).first():
-            return jsonify({'error': 'Email already in use'}), 400
-        user.email = data['email']
-    
-    # Update password with confirmation
-    if 'password' in data:
-        if not all(key in data for key in ['current_password', 'password', 'password_confirmation']):
-            return jsonify({'error': 'Current password and password confirmation required'}), 400
-            
-        if data['password'] != data['password_confirmation']:
-            return jsonify({'error': 'New passwords do not match'}), 400
-            
-        if len(data['password']) < 8:
-            return jsonify({'error': 'Password must be at least 8 characters'}), 400
-        
-        # Verify current password
+
+    # Verify required fields
+    required_fields = ['first_name', 'last_name', 'email', 'old_password']
+    if not all(field in data for field in required_fields):
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    try:
+        # Get user from database
+        user = User.query.get(current_user_id)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+
+        # Verify old password using bcrypt
         if not bcrypt.checkpw(
-            data['current_password'].encode('utf-8'),
+            data['old_password'].encode('utf-8'),
             user.hashed_password.encode('utf-8')
         ):
-            return jsonify({'error': 'Invalid current password'}), 401
-        
-        # Hash and set new password
-        hashed_password = bcrypt.hashpw(
-            data['password'].encode('utf-8'),
-            bcrypt.gensalt()
-        )
-        user.hashed_password = hashed_password.decode('utf-8')
+            return jsonify({'error': 'Current password is incorrect'}), 401
 
-    db.session.commit()
-    return jsonify({'message': 'Profile updated successfully', 'user': user.to_dict()}), 200
+        # Update user information
+        user.first_name = data['first_name']
+        user.last_name = data['last_name']
+        user.email = data['email']
+
+        # Update password if provided
+        if data.get('new_password'):
+            new_hashed_password = bcrypt.hashpw(
+                data['new_password'].encode('utf-8'),
+                bcrypt.gensalt()
+            )
+            user.hashed_password = new_hashed_password.decode('utf-8')
+
+        db.session.commit()
+
+        # Return updated user info
+        return jsonify({
+            'message': 'Profile updated successfully',
+            'user': {
+                'user_id': user.user_id,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'email': user.email
+            }
+        }), 200
+
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'error': 'Email already exists'}), 409
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
