@@ -12,6 +12,12 @@ const config: Config = {
         gold: "#D4AF37",
         navy: "#003366",
       },
+      width: {
+        'icon': '20rem',
+      },
+      height: {
+        'icon': '20rem',
+      }
     },
   },
   plugins: [],
