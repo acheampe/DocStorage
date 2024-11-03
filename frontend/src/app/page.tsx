@@ -1,5 +1,6 @@
 'use client'
 import React from 'react'
+import Link from 'next/link'
 
 export default function Home() {
   return (
@@ -15,10 +16,10 @@ export default function Home() {
         title="Sign in to your existing account">
           Login
         </button>
-        <button className="w-64 bg-gold text-white py-3 rounded-full text-lg font-semibold hover:bg-opacity-85 transition-all"
-        title="Create a new account to start storing documents">
+        <Link href="/register" className="w-64 bg-gold text-white py-3 rounded-full text-lg font-semibold hover:bg-opacity-85 transition-all text-center"
+          title="Create a new account to start storing documents">
           Register New User
-        </button>
+        </Link>
       </div>
 
       {/* Right Section */}
