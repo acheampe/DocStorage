@@ -18,85 +18,138 @@ interface File {
 }
 
 export default function Dashboard() {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [recentFiles, setRecentFiles] = useState<File[]>([]);
-  const router = useRouter();
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
     const userData = localStorage.getItem('user');
-
-    if (!token || !userData) {
+    if (!userData) {
       router.push('/login');
       return;
     }
-
     setUser(JSON.parse(userData));
-    setRecentFiles([]);
   }, [router]);
 
   const handleLogout = () => {
-    // Clear local storage
-    localStorage.removeItem('token');
     localStorage.removeItem('user');
-    
-    // Redirect to home page
-    router.push('/');
+    localStorage.removeItem('token');
+    router.push('/login');
   };
 
-  if (!user) {
-    return <div>Loading...</div>;
-  }
-
   return (
-    <div className="flex min-h-screen justify-center items-center">
-      <LockIcon />
-      <div className="fixed top-5 right-5 flex gap-4">
-        <span 
-          className="material-symbols-rounded text-gold text-5xl cursor-pointer hover:opacity-80"
-          onClick={() => router.push('/settings')}
-        >
-          settings
-        </span>
-        <span 
-          className="material-symbols-rounded text-gold text-5xl cursor-pointer hover:opacity-80" 
-          onClick={handleLogout}
-        >
-          logout
-        </span>
-      </div>
+    <div className="min-h-screen bg-white">
+      {/* Navigation Bar */}
+      <nav className="bg-navy p-4">
+        <div className="container mx-auto flex justify-between items-center">
+          <Link href="/dashboard" className="text-gold text-2xl font-bold" title="Return to dashboard home">
+            DocStorage
+          </Link>
+          <div className="flex items-center gap-6">
+            <Link 
+              href="/settings" 
+              className="text-white hover:text-gold transition-colors"
+              title="Update your profile information and password"
+            >
+              Settings
+            </Link>
+            <button 
+              onClick={handleLogout} 
+              className="text-white hover:text-gold transition-colors"
+              title="Sign out of your account"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </nav>
 
-      <div className="w-full max-w-3xl mx-auto flex flex-col items-center space-y-6 mt-32">
+      {/* Main Content */}
+      <main className="container mx-auto p-8">
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-4xl font-bold text-navy">
+            Welcome, {user?.first_name}!
+          </h1>
+          <button 
+            className="bg-navy text-white px-6 py-2 rounded-lg hover:bg-opacity-90"
+            title="Upload new documents to your storage"
+          >
+            Upload Files
+          </button>
+        </div>
+
         {/* Search Bar */}
-        <div className="w-full">
+        <div className="relative mb-6">
           <input
             type="text"
-            placeholder="Search file"
-            className="w-full p-4 border-4 border-navy rounded-2xl"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search files..."
+            className="w-full p-4 border-4 border-navy rounded-2xl pl-12"
+            title="Search through all your files"
           />
+          <span 
+            className="material-symbols-rounded absolute left-4 top-1/2 -translate-y-1/2 text-navy opacity-50"
+            title="Search icon"
+          >
+            search
+          </span>
         </div>
 
         {/* Recent Files Section */}
-        <div className="w-full">
-          <div className="bg-white rounded-2xl p-4 mb-4">
-            <h2 className="text-4xl font-bold text-gold text-center">Recent Files</h2>
-          </div>
-
+        <section className="bg-white rounded-lg shadow-xl p-6">
+          <h2 className="text-2xl font-bold text-navy mb-4">Recent Files</h2>
           {recentFiles.length === 0 ? (
             <div className="text-center">
               <div className="grid grid-cols-3 gap-2 mb-4 max-w-lg mx-auto">
-                {/* First Row */}
-                <span className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]">slideshow</span>
-                <span className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]">description</span>
-                <span className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]">picture_as_pdf</span>
-                {/* Second Row */}
-                <span className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]">image</span>
-                <span className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]">folder</span>
-                <span className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]">article</span>
+                <span 
+                  className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]"
+                  title="Store and view presentations"
+                >
+                  slideshow
+                </span>
+                <span 
+                  className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]"
+                  title="Store and view documents"
+                >
+                  description
+                </span>
+                <span 
+                  className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]"
+                  title="Store and view PDFs"
+                >
+                  picture_as_pdf
+                </span>
+                <span 
+                  className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]"
+                  title="Store and view images"
+                >
+                  image
+                </span>
+                <span 
+                  className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]"
+                  title="Organize files in folders"
+                >
+                  folder
+                </span>
+                <span 
+                  className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]"
+                  title="Store and view articles"
+                >
+                  article
+                </span>
               </div>
-              <h3 className="text-2xl font-bold text-navy">
+              <h3 className="text-2xl font-bold text-navy mb-4">
                 Upload files to store for DocStorage to display
               </h3>
+              <Link 
+                href="/files"
+                className="inline-block bg-navy text-white px-6 py-2 rounded-lg hover:bg-opacity-90 transition-all"
+                title="View all your stored files"
+              >
+                View All Files
+              </Link>
             </div>
           ) : (
             <div className="grid grid-cols-3 gap-6">
@@ -108,18 +161,8 @@ export default function Dashboard() {
               ))}
             </div>
           )}
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex justify-between w-full">
-          <button className="bg-navy text-white font-bold text-xl py-4 px-8 rounded-2xl hover:bg-opacity-90 transition-all">
-            View All Files
-          </button>
-          <button className="bg-navy text-white font-bold text-xl py-4 px-8 rounded-2xl hover:bg-opacity-90 transition-all">
-            Upload file
-          </button>
-        </div>
-      </div>
+        </section>
+      </main>
     </div>
   );
 }
