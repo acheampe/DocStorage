@@ -29,7 +29,7 @@ export default function Settings() {
 
   const handleLogout = () => {
     localStorage.clear();
-    router.push('/login');
+    router.push('/');
   };
 
   useEffect(() => {
