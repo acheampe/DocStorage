@@ -2,7 +2,8 @@
 import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import LockIcon from '@/components/LockIcon'
+import Footer from '@/components/Footer'
+// import LockIcon from '@/components/LockIcon'
 
 interface User {
   user_id: number;
@@ -39,7 +40,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen flex flex-col bg-white">
       {/* Navigation Bar */}
       <nav className="bg-navy p-4">
         <div className="container mx-auto flex justify-between items-center">
@@ -66,7 +67,7 @@ export default function Dashboard() {
       </nav>
 
       {/* Main Content */}
-      <main className="container mx-auto p-8">
+      <main className="flex-grow container mx-auto p-8">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-bold text-navy">
             Welcome, {user?.first_name}!
@@ -163,6 +164,7 @@ export default function Dashboard() {
           )}
         </section>
       </main>
+      <Footer />
     </div>
   );
 }

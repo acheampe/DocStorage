@@ -1,7 +1,9 @@
 'use client'
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import LockIcon from '@/components/LockIcon'
+import Link from 'next/link'
+import Footer from '@/components/Footer'
+// import LockIcon from '@/components/LockIcon'
 
 interface User {
   user_id: number;
@@ -12,6 +14,7 @@ interface User {
 
 export default function Settings() {
   const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [formData, setFormData] = useState({
@@ -24,13 +27,19 @@ export default function Settings() {
   });
   const [error, setError] = useState('');
 
+  const handleLogout = () => {
+    localStorage.clear();
+    router.push('/login');
+  };
+
   useEffect(() => {
     const userData = localStorage.getItem('user');
     if (!userData) {
       router.push('/login');
       return;
     }
-    const user = JSON.parse(userData);
+    const user: User = JSON.parse(userData);
+    setUser(user);
     setFormData(prev => ({
       ...prev,
       first_name: user.first_name,
@@ -88,9 +97,34 @@ export default function Settings() {
   };
 
   return (
-    <div className="flex min-h-screen justify-center items-center">
-      <LockIcon />
-      <div className="w-full max-w-3xl mx-auto p-8">
+    <div className="min-h-screen flex flex-col bg-white">
+      {/* Navigation Bar */}
+      <nav className="bg-navy p-4">
+        <div className="container mx-auto flex justify-between items-center">
+          <Link href="/dashboard" className="text-gold text-2xl font-bold" title="Return to dashboard home">
+            DocStorage
+          </Link>
+          <div className="flex items-center gap-6">
+            <Link 
+              href="/settings" 
+              className="text-white hover:text-gold transition-colors"
+              title="Update your profile information and password"
+            >
+              Settings
+            </Link>
+            <button 
+              onClick={handleLogout} 
+              className="text-white hover:text-gold transition-colors"
+              title="Sign out of your account"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      {/* Main Content */}
+      <div className="flex-grow w-full max-w-3xl mx-auto p-8">
         <h1 className="text-6xl font-black text-navy text-center mb-12">Update Profile</h1>
         
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -229,6 +263,7 @@ export default function Settings() {
           </div>
         )}
       </div>
+      <Footer />
     </div>
   );
 }
