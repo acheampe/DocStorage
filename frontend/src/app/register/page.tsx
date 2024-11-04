@@ -2,6 +2,8 @@
 import React, { useState } from 'react'
 import Link from 'next/link'
 import LockIcon from '@/components/LockIcon'
+import { validatePassword } from '@/utils/passwordValidation'
+import { useRouter } from 'next/navigation'
 
 export default function Register() {
   const [formData, setFormData] = useState({
@@ -12,9 +14,17 @@ export default function Register() {
     password_confirmation: ''
   });
   const [error, setError] = useState('');
+  const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    const passwordValidation = validatePassword(formData.password);
+    if (!passwordValidation.isValid) {
+      setError(passwordValidation.message);
+      return;
+    }
+
     if (formData.password !== formData.password_confirmation) {
       setError('Passwords do not match');
       return;
@@ -33,8 +43,28 @@ export default function Register() {
       if (!response.ok) {
         throw new Error(data.error || 'Registration failed');
       }
+
+      // After successful registration, perform login
+      const loginResponse = await fetch('http://127.0.0.1:5000/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password
+        }),
+      });
+
+      const loginData = await loginResponse.json();
+      if (!loginResponse.ok) {
+        throw new Error(loginData.error || 'Login failed');
+      }
+
+      localStorage.setItem('token', loginData.token);
+      localStorage.setItem('user', JSON.stringify(loginData.user));
       
-      window.location.href = '/';
+      router.push('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
     }
@@ -106,6 +136,9 @@ export default function Register() {
             onChange={(e) => setFormData({...formData, password: e.target.value})}
             required
             />
+            <p className="text-sm text-gray-600 mt-1">
+              Min. 8 characters with uppercase, lowercase, number & special character
+            </p>
         </div>
 
         <div className="relative">
@@ -120,6 +153,9 @@ export default function Register() {
             onChange={(e) => setFormData({...formData, password_confirmation: e.target.value})}
             required
             />
+            <p className="text-sm text-gray-600 mt-1">
+              Re-enter password to confirm
+            </p>
         </div>
 
         <div className="flex flex-col items-center gap-4">

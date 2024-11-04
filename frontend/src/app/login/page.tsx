@@ -1,9 +1,11 @@
 'use client'
 import React, { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import LockIcon from '@/components/LockIcon'
 
 export default function Login() {
+  const router = useRouter();
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -27,11 +29,10 @@ export default function Login() {
         throw new Error(data.error || 'Login failed');
       }
       
-      // Store the token and user data
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
       
-      window.location.href = '/dashboard';
+      router.push('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     }

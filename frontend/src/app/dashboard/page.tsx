@@ -25,12 +25,25 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    if (!userData) {
+    try {
+      const userData = localStorage.getItem('user');
+      if (!userData) {
+        router.push('/login');
+        return;
+      }
+      const parsedUser = JSON.parse(userData);
+      if (!parsedUser || !parsedUser.user_id) {
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+        router.push('/login');
+        return;
+      }
+      setUser(parsedUser);
+    } catch (err) {
+      localStorage.removeItem('user');
+      localStorage.removeItem('token');
       router.push('/login');
-      return;
     }
-    setUser(JSON.parse(userData));
   }, [router]);
 
   const handleLogout = () => {
