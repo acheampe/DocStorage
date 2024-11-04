@@ -228,6 +228,7 @@ export default function Settings() {
             <button
               type="submit"
               className="flex-1 bg-navy text-white font-black text-xl py-4 px-8 rounded-2xl hover:bg-opacity-90 transition-all"
+              title='First update confirmation'
             >
               Update Account
             </button>
@@ -235,6 +236,7 @@ export default function Settings() {
               type="button"
               onClick={() => router.push('/dashboard')}
               className="flex-1 bg-navy text-white font-black text-xl py-4 px-8 rounded-2xl hover:bg-opacity-90 transition-all"
+              title='Cancel update and return to dashboard'
             >
               Cancel Update
             </button>
@@ -246,17 +248,21 @@ export default function Settings() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
             <div className="bg-white p-8 rounded-2xl max-w-md w-full mx-4">
               <h2 className="text-2xl font-bold text-navy mb-4">Confirm Update</h2>
-              <p className="text-navy mb-6">Are you sure you want to update your profile?</p>
+              <p className="text-navy mb-6">Are you sure you want to update your profile? <strong>UNABLE</strong> to do action 
+              after <strong>confirmation</strong>.
+              </p>
               <div className="flex justify-end gap-4">
                 <button
                   onClick={() => setShowConfirmModal(false)}
                   className="px-4 py-2 text-navy hover:underline"
+                  title='Cancel and return to setting page'
                 >
                   Cancel
                 </button>
                 <button
                   onClick={confirmUpdate}
                   className="px-4 py-2 bg-navy text-white rounded-lg hover:bg-opacity-90"
+                  title='Final confirmation'
                 >
                   Confirm
                 </button>
