@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Footer from '@/components/Footer'
+import { validatePassword } from '@/utils/passwordValidation'
 // import LockIcon from '@/components/LockIcon'
 
 interface User {
@@ -56,7 +57,13 @@ export default function Settings() {
       return;
     }
 
-    if (formData.new_password || formData.confirm_password) {
+    if (formData.new_password) {
+      const passwordValidation = validatePassword(formData.new_password);
+      if (!passwordValidation.isValid) {
+        setError(passwordValidation.message);
+        return;
+      }
+
       if (formData.new_password !== formData.confirm_password) {
         setError('New passwords do not match');
         return;
@@ -176,7 +183,6 @@ export default function Settings() {
                 value={formData.old_password}
                 onChange={(e) => setFormData({...formData, old_password: e.target.value})}
                 className="w-full p-4 border-4 border-gold border-opacity-45 rounded-2xl"
-                required
               />
               <p className="text-sm text-gray-600 mt-1">
                 * Required to save any changes to your profile
@@ -197,6 +203,9 @@ export default function Settings() {
                 onChange={(e) => setFormData({...formData, new_password: e.target.value})}
                 className="w-full p-4 border-4 border-gold border-opacity-45 rounded-2xl"
               />
+              <p className="text-sm text-gray-600 mt-1">
+                Min. 8 characters with uppercase, lowercase, number & special character
+              </p>
             </div>
 
             <div className="relative">
@@ -209,6 +218,9 @@ export default function Settings() {
                 onChange={(e) => setFormData({...formData, confirm_password: e.target.value})}
                 className="w-full p-4 border-4 border-gold border-opacity-45 rounded-2xl"
               />
+              <p className="text-sm text-gray-600 mt-1">
+                Re-enter password to confirm
+              </p>
             </div>
           </div>
 
