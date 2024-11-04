@@ -1,6 +1,7 @@
 'use client'
 import React, { useState } from 'react'
 import Link from 'next/link'
+import LockIcon from '@/components/LockIcon'
 
 export default function Register() {
   const [formData, setFormData] = useState({
@@ -41,10 +42,7 @@ export default function Register() {
 
   return (
     <div className="flex min-h-screen justify-center items-center">
-      {/* Lock Icon */}
-      <div className="fixed top-5 left-5">
-        <span className="material-symbols-rounded text-gold text-5xl">lock</span>
-      </div>
+      <LockIcon />
 
       {/* Left Section - Form */}
       <div className="w-2/3 py-12 px-20 relative">
@@ -131,7 +129,7 @@ export default function Register() {
             >
             Create Account
             </button>
-            <Link href="/" className="text-sm">
+            <Link href="/login" className="text-sm">
             Already have an account? <span className="text-navy font-bold">Login</span>
             </Link>
         </div>
