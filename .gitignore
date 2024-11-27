@@ -13,3 +13,6 @@ venv
 
 #ignore test account
 usertxt.txt
+
+#ignore todo list
+todotxt.txt

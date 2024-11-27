@@ -45,5 +45,28 @@ def auth_service(path):
     except requests.exceptions.RequestException:
         return jsonify({'error': 'Auth service unavailable'}), 503
 
+@app.route('/docs/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+def docs_service(path):
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+        return response
+
+    try:
+        service_url = SERVICES['docs']
+        response = requests.request(
+            method=request.method,
+            url=f"{service_url}/docs/{path}",
+            headers={key: value for key, value in request.headers if key != 'Host'},
+            data=request.get_data(),
+            cookies=request.cookies,
+            allow_redirects=False
+        )
+        return response.content, response.status_code, response.headers.items()
+    except requests.exceptions.RequestException:
+        return jsonify({'error': 'Document service unavailable'}), 503
+
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000)
