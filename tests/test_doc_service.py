@@ -7,8 +7,8 @@ AUTH_URL = 'http://localhost:3001'
 
 def login_user():
     response = requests.post(f'{AUTH_URL}/auth/login', json={
-        'email': 'test@example.com',
-        'password': 'test123'
+        'email': 'jane.smith@example.com',
+        'password': 'Pass456$%^'
     })
     return response.json()['token']
 

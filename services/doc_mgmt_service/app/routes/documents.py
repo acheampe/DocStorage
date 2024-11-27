@@ -69,6 +69,7 @@ def upload_document():
             original_filename=filename,
             file_type=file_type,
             file_size=os.path.getsize(file_path),
+            file_path=file_path,
             user_id=user_id,
             description=request.form.get('description', '')
         )
