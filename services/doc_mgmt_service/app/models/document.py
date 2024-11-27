@@ -24,6 +24,7 @@ class Document(db.Model):
             'filename': self.original_filename,
             'file_type': self.file_type,
             'file_size': self.file_size,
+            'file_path': self.file_path,
             'upload_date': self.upload_date.isoformat(),
             'last_modified': self.last_modified.isoformat(),
             'description': self.description

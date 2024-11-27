@@ -30,6 +30,8 @@ def test_document_service():
                                files=files,
                                data=data)
         print('Upload response:', response.json())
+        if response.status_code != 201:
+            raise Exception(f"Upload failed: {response.json()['error']}")
         doc_id = response.json()['doc_id']
     
     # 2. Test get all documents

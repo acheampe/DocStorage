@@ -69,9 +69,11 @@ def upload_document():
             original_filename=filename,
             file_type=file_type,
             file_size=os.path.getsize(file_path),
-            file_path=file_path,
+            file_path=file_path,  # Use the absolute path
             user_id=user_id,
-            description=request.form.get('description', '')
+            description=request.form.get('description', ''),
+            upload_date=datetime.utcnow(),
+            last_modified=datetime.utcnow()
         )
         
         db.session.add(document)
