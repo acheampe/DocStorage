@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify, send_file, current_app
 from werkzeug.utils import secure_filename
 import os
 import magic
@@ -49,7 +49,7 @@ def upload_document():
 
     try:
         filename = secure_filename(file.filename)
-        user_folder = os.path.join(UPLOAD_FOLDER, str(user_id))
+        user_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], str(user_id))
         os.makedirs(user_folder, exist_ok=True)
         
         # Create unique filename
