@@ -8,7 +8,7 @@ class Document(db.Model):
     filename = db.Column(db.String(255), nullable=False)
     original_filename = db.Column(db.String(255), nullable=False)
     file_type = db.Column(db.String(100), nullable=False)
-    file_size = db.Column(db.Integer, nullable=False)  # Size in bytes
+    file_size = db.Column(db.Integer, nullable=False)
     file_path = db.Column(db.String(255), nullable=False)
     user_id = db.Column(db.Integer, nullable=False)
     upload_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)

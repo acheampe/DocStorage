@@ -1,14 +1,17 @@
 import requests
 import os
-import json
+from dotenv import load_dotenv
 
-BASE_URL = 'http://localhost:3002'
-AUTH_URL = 'http://localhost:3001'
+# Load environment variables
+load_dotenv()
+
+BASE_URL = os.getenv('TEST_DOC_SERVICE_URL')
+AUTH_URL = os.getenv('TEST_AUTH_URL')
 
 def login_user():
     response = requests.post(f'{AUTH_URL}/auth/login', json={
-        'email': 'jane.smith@example.com',
-        'password': 'Pass456$%^'
+        'email': os.getenv('TEST_USER_EMAIL'),
+        'password': os.getenv('TEST_USER_PASSWORD')
     })
     return response.json()['token']
 
