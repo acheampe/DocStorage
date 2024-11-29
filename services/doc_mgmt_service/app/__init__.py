@@ -1,6 +1,7 @@
 from flask import Flask
 from .extensions import db
 from .config import Config
+from flask_cors import CORS
 import os
 
 def create_app():
@@ -8,6 +9,16 @@ def create_app():
     
     # Configure your app
     app.config.from_object(Config)
+    
+    # Initialize CORS
+    CORS(app, resources={
+        r"/*": {
+            "origins": ["http://localhost:3000"],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization"],
+            "supports_credentials": True
+        }
+    })
     
     # Initialize extensions
     db.init_app(app)

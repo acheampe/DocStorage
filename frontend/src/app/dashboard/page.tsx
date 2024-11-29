@@ -23,6 +23,7 @@ export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [recentFiles, setRecentFiles] = useState<File[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -43,6 +44,27 @@ export default function Dashboard() {
       localStorage.removeItem('user');
       localStorage.removeItem('token');
       router.push('/login');
+    }
+  }, [router]);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const uploadStatus = searchParams.get('upload');
+    
+    if (uploadStatus === 'success') {
+      setUploadMessage('Files uploaded successfully!');
+      // Clear the message after 3 seconds
+      setTimeout(() => {
+        setUploadMessage(null);
+        // Remove the query parameter
+        router.replace('/dashboard', undefined, { shallow: true });
+      }, 3000);
+    } else if (uploadStatus === 'partial') {
+      setUploadMessage('Some files were uploaded successfully');
+      setTimeout(() => {
+        setUploadMessage(null);
+        router.replace('/dashboard', undefined, { shallow: true });
+      }, 3000);
     }
   }, [router]);
 
@@ -85,12 +107,13 @@ export default function Dashboard() {
           <h1 className="text-4xl font-bold text-navy">
             Welcome, {user?.first_name}!
           </h1>
-          <button 
+          <Link 
+            href="/uploadFiles"
             className="bg-navy text-white px-6 py-2 rounded-lg hover:bg-opacity-90"
             title="Upload new documents to your storage"
           >
             Upload Files
-          </button>
+          </Link>
         </div>
 
         {/* Search Bar */}
@@ -110,6 +133,12 @@ export default function Dashboard() {
             search
           </span>
         </div>
+
+        {uploadMessage && (
+          <div className="mb-6 p-4 bg-green-100 text-green-700 rounded-lg text-center transition-opacity duration-500">
+            {uploadMessage}
+          </div>
+        )}
 
         {/* Recent Files Section */}
         <section className="bg-white rounded-lg shadow-xl p-6">
