@@ -36,12 +36,16 @@ export default function UploadFiles() {
 
     try {
       const token = localStorage.getItem('token');
-      const formData = new FormData();
+      console.log('Token:', token);
       
+      const formData = new FormData();
       Array.from(files).forEach(file => {
         formData.append('file', file);
+        console.log('Appending file:', file.name);
       });
 
+      console.log('Sending request to:', 'http://127.0.0.1:5000/docs/upload');
+      
       const response = await fetch('http://127.0.0.1:5000/docs/upload', {
         method: 'POST',
         headers: {
@@ -50,6 +54,8 @@ export default function UploadFiles() {
         body: formData
       });
 
+      console.log('Response status:', response.status);
+      
       if (response.status === 201) {
         router.push('/dashboard');
         return;
@@ -58,6 +64,7 @@ export default function UploadFiles() {
       const errorData = await response.json();
       throw new Error(errorData.error || 'Upload failed');
     } catch (err) {
+      console.error('Upload error:', err);
       setError(err instanceof Error ? err.message : 'Upload failed');
     }
   };

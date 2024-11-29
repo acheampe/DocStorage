@@ -30,9 +30,6 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @docs_bp.route('/upload', methods=['POST', 'OPTIONS'])
-@cross_origin(origins=['http://localhost:3000'], 
-             allow_headers=['Content-Type', 'Authorization'],
-             methods=['POST', 'OPTIONS'])
 def upload_document():
     if request.method == 'OPTIONS':
         return '', 200

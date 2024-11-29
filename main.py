@@ -8,7 +8,7 @@ load_dotenv()
 
 app = Flask(__name__)
 CORS(app, resources={
-    r"/auth/*": {
+    r"/*": {
         "origins": "http://localhost:3000",
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"]
@@ -52,20 +52,44 @@ def docs_service(path):
         response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
         response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
         response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
         return response
 
     try:
         service_url = SERVICES['docs']
-        response = requests.request(
-            method=request.method,
-            url=f"{service_url}/docs/{path}",
-            headers={key: value for key, value in request.headers if key != 'Host'},
-            data=request.get_data(),
-            cookies=request.cookies,
-            allow_redirects=False
-        )
+        
+        # Handle file uploads differently
+        if request.files:
+            files = {
+                key: (value.filename, value.stream, value.content_type)
+                for key, value in request.files.items()
+            }
+            headers = {
+                k: v for k, v in request.headers.items()
+                if k.lower() not in ['host', 'content-length', 'content-type']
+            }
+            response = requests.request(
+                method=request.method,
+                url=f"{service_url}/docs/{path}",
+                headers=headers,
+                files=files,
+                data=request.form,
+                cookies=request.cookies,
+                allow_redirects=False
+            )
+        else:
+            response = requests.request(
+                method=request.method,
+                url=f"{service_url}/docs/{path}",
+                headers={k: v for k, v in request.headers if k != 'Host'},
+                data=request.get_data(),
+                cookies=request.cookies,
+                allow_redirects=False
+            )
+        
         return response.content, response.status_code, response.headers.items()
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as e:
+        print(f"Document service error: {str(e)}")
         return jsonify({'error': 'Document service unavailable'}), 503
 
 if __name__ == '__main__':
