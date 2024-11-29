@@ -6,6 +6,7 @@ import jwt
 from datetime import datetime
 from ..models.document import Document
 from ..extensions import db
+from flask_cors import cross_origin
 
 docs_bp = Blueprint('documents', __name__)
 
@@ -28,8 +29,14 @@ def get_user_id_from_token():
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@docs_bp.route('/upload', methods=['POST'])
+@docs_bp.route('/upload', methods=['POST', 'OPTIONS'])
+@cross_origin(origins=['http://localhost:3000'], 
+             allow_headers=['Content-Type', 'Authorization'],
+             methods=['POST', 'OPTIONS'])
 def upload_document():
+    if request.method == 'OPTIONS':
+        return '', 200
+        
     user_id = get_user_id_from_token()
     if not user_id:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -140,3 +147,11 @@ def delete_document(doc_id):
         return jsonify({'message': 'Document deleted successfully'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@docs_bp.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response

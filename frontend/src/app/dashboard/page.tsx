@@ -85,12 +85,13 @@ export default function Dashboard() {
           <h1 className="text-4xl font-bold text-navy">
             Welcome, {user?.first_name}!
           </h1>
-          <button 
+          <Link 
+            href="/uploadFiles"
             className="bg-navy text-white px-6 py-2 rounded-lg hover:bg-opacity-90"
             title="Upload new documents to your storage"
           >
             Upload Files
-          </button>
+          </Link>
         </div>
 
         {/* Search Bar */}
