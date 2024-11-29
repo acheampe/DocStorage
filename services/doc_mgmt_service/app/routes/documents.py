@@ -147,6 +147,25 @@ def delete_document(doc_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@docs_bp.route('/recent', methods=['GET'])
+def get_recent_documents():
+    user_id = get_user_id_from_token()
+    if not user_id:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    try:
+        documents = Document.query.filter_by(user_id=user_id)\
+            .order_by(Document.upload_date.desc())\
+            .limit(6)\
+            .all()
+        
+        return jsonify({
+            'files': [doc.to_dict() for doc in documents]
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @docs_bp.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')

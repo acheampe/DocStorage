@@ -13,9 +13,30 @@ interface User {
 }
 
 interface File {
-  id: number;
-  name: string;
-  uploaded_at: string;
+  doc_id: number;
+  original_filename: string;
+  upload_date: string;
+}
+
+function getFileIcon(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  switch (ext) {
+    case 'pdf':
+      return 'picture_as_pdf';
+    case 'doc':
+    case 'docx':
+      return 'description';
+    case 'ppt':
+    case 'pptx':
+      return 'slideshow';
+    case 'jpg':
+    case 'jpeg':
+    case 'png':
+    case 'gif':
+      return 'image';
+    default:
+      return 'article';
+  }
 }
 
 export default function Dashboard() {
@@ -57,16 +78,45 @@ export default function Dashboard() {
       setTimeout(() => {
         setUploadMessage(null);
         // Remove the query parameter
-        router.replace('/dashboard', undefined, { shallow: true });
+        router.replace('/dashboard');
       }, 3000);
     } else if (uploadStatus === 'partial') {
       setUploadMessage('Some files were uploaded successfully');
       setTimeout(() => {
         setUploadMessage(null);
-        router.replace('/dashboard', undefined, { shallow: true });
+        router.replace('/dashboard');
       }, 3000);
     }
   }, [router]);
+
+  useEffect(() => {
+    const fetchRecentFiles = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch('http://127.0.0.1:5000/docs/recent', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch recent files');
+        }
+        const data = await response.json();
+        setRecentFiles(data.files.map((file: { doc_id: string; original_filename: string; upload_date: string }) => ({
+          doc_id: file.doc_id,
+          original_filename: file.original_filename,
+          upload_date: file.upload_date
+        })));
+      } catch (error) {
+        console.error('Error fetching recent files:', error);
+      }
+    };
+
+    if (user) {
+      fetchRecentFiles();
+    }
+  }, [user]);
 
   const handleLogout = () => {
     localStorage.removeItem('user');
@@ -196,10 +246,20 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="grid grid-cols-3 gap-6">
-              {recentFiles.slice(0, 6).map((file) => (
-                <div key={file.id} className="p-4 border border-navy rounded-lg">
-                  <h4 className="font-bold">{file.name}</h4>
-                  <p className="text-sm">{file.uploaded_at}</p>
+              {recentFiles.map((file) => (
+                <div 
+                  key={file.doc_id} 
+                  className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="material-symbols-rounded text-navy">
+                      {getFileIcon(file.original_filename)}
+                    </span>
+                    <h4 className="font-bold text-navy truncate">{file.original_filename}</h4>
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    {new Date(file.upload_date).toLocaleDateString()}
+                  </p>
                 </div>
               ))}
             </div>
