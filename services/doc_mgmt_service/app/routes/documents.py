@@ -38,68 +38,70 @@ def upload_document():
     if not user_id:
         return jsonify({'error': 'Unauthorized'}), 401
 
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
+    if 'files[]' not in request.files:
+        return jsonify({'error': 'No files provided'}), 400
     
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
+    files = request.files.getlist('files[]')
+    if not files or all(file.filename == '' for file in files):
+        return jsonify({'error': 'No files selected'}), 400
 
-    if not allowed_file(file.filename):
-        return jsonify({'error': 'File type not allowed'}), 400
+    uploaded_documents = []
+    errors = []
 
-    if file.content_length and file.content_length > MAX_FILE_SIZE:
-        return jsonify({'error': 'File size exceeds maximum limit'}), 400
+    for file in files:
+        if not allowed_file(file.filename):
+            errors.append(f"{file.filename}: File type not allowed")
+            continue
 
-    try:
-        filename = secure_filename(file.filename)
-        user_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], str(user_id))
-        os.makedirs(user_folder, exist_ok=True)
-        
-        # Create unique filename
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        unique_filename = f"{timestamp}_{filename}"
-        file_path = os.path.join(user_folder, unique_filename)
-        
-        file.save(file_path)
-        
-        # Get file type using python-magic
-        mime = magic.Magic(mime=True)
-        file_type = mime.from_file(file_path)
-        
-        # Create document record
-        relative_path = os.path.join(str(user_id), unique_filename)
-        print(f"Creating document with file_path: {relative_path}")
-        
-        document = Document(
-            filename=unique_filename,
-            original_filename=filename,
-            file_type=file_type,
-            file_size=os.path.getsize(file_path),
-            file_path=relative_path,
-            user_id=user_id,
-            description=request.form.get('description', ''),
-            upload_date=datetime.utcnow(),
-            last_modified=datetime.utcnow()
-        )
-        
-        print(f"Document attributes before commit:")
-        print(f"file_path: {document.file_path}")
-        print(f"All attributes: {document.__dict__}")
-        
-        db.session.add(document)
+        if file.content_length and file.content_length > MAX_FILE_SIZE:
+            errors.append(f"{file.filename}: File size exceeds maximum limit")
+            continue
+
         try:
+            filename = secure_filename(file.filename)
+            user_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], str(user_id))
+            os.makedirs(user_folder, exist_ok=True)
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            unique_filename = f"{timestamp}_{filename}"
+            file_path = os.path.join(user_folder, unique_filename)
+            
+            file.save(file_path)
+            
+            mime = magic.Magic(mime=True)
+            file_type = mime.from_file(file_path)
+            
+            relative_path = os.path.join(str(user_id), unique_filename)
+            
+            document = Document(
+                filename=unique_filename,
+                original_filename=filename,
+                file_type=file_type,
+                file_size=os.path.getsize(file_path),
+                file_path=relative_path,
+                user_id=user_id,
+                description=request.form.get('description', ''),
+                upload_date=datetime.utcnow(),
+                last_modified=datetime.utcnow()
+            )
+            
+            db.session.add(document)
             db.session.commit()
-            print("Commit successful")
+            uploaded_documents.append(document.to_dict())
+            
         except Exception as e:
-            print(f"Commit failed: {str(e)}")
+            errors.append(f"{file.filename}: {str(e)}")
             db.session.rollback()
-            raise
-        
-        return jsonify(document.to_dict()), 201
+            continue
 
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    response_data = {
+        'uploaded_documents': uploaded_documents,
+        'errors': errors if errors else None
+    }
+
+    # Return 201 if at least one file was uploaded successfully
+    status_code = 201 if uploaded_documents else 500
+    return jsonify(response_data), status_code
 
 @docs_bp.route('/documents', methods=['GET'])
 def get_user_documents():
