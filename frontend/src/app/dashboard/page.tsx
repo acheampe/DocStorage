@@ -192,7 +192,18 @@ export default function Dashboard() {
 
         {/* Recent Files Section */}
         <section className="bg-white rounded-lg shadow-xl p-6">
-          <h2 className="text-2xl font-bold text-navy mb-4">Recent Files</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-bold text-navy">Recent Files</h2>
+            {recentFiles.length > 0 && (
+              <Link 
+                href="/files"
+                className="bg-navy text-white px-6 py-2 rounded-lg hover:bg-opacity-90 transition-all"
+                title="View all your stored files"
+              >
+                View All Files
+              </Link>
+            )}
+          </div>
           {recentFiles.length === 0 ? (
             <div className="text-center">
               <div className="grid grid-cols-3 gap-2 mb-4 max-w-lg mx-auto">
