@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify, send_file, current_app
 from werkzeug.utils import secure_filename
 import os
 import magic
@@ -49,7 +49,7 @@ def upload_document():
 
     try:
         filename = secure_filename(file.filename)
-        user_folder = os.path.join(UPLOAD_FOLDER, str(user_id))
+        user_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], str(user_id))
         os.makedirs(user_folder, exist_ok=True)
         
         # Create unique filename
@@ -64,17 +64,33 @@ def upload_document():
         file_type = mime.from_file(file_path)
         
         # Create document record
+        relative_path = os.path.join(str(user_id), unique_filename)
+        print(f"Creating document with file_path: {relative_path}")
+        
         document = Document(
             filename=unique_filename,
             original_filename=filename,
             file_type=file_type,
             file_size=os.path.getsize(file_path),
+            file_path=relative_path,
             user_id=user_id,
-            description=request.form.get('description', '')
+            description=request.form.get('description', ''),
+            upload_date=datetime.utcnow(),
+            last_modified=datetime.utcnow()
         )
         
+        print(f"Document attributes before commit:")
+        print(f"file_path: {document.file_path}")
+        print(f"All attributes: {document.__dict__}")
+        
         db.session.add(document)
-        db.session.commit()
+        try:
+            db.session.commit()
+            print("Commit successful")
+        except Exception as e:
+            print(f"Commit failed: {str(e)}")
+            db.session.rollback()
+            raise
         
         return jsonify(document.to_dict()), 201
 
