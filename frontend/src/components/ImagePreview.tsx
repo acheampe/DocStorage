@@ -21,6 +21,7 @@ export default function ImagePreview({ src, alt, onClose }: ImagePreviewProps) {
             src={src} 
             alt={alt} 
             className="max-w-full max-h-[90vh] object-contain bg-gray-50 rounded"
+            crossOrigin="use-credentials"
             onError={() => setImageError(true)}
           />
         ) : (
