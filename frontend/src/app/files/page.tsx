@@ -20,6 +20,11 @@ export default function Files() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingFile, setEditingFile] = useState<{ id: number; name: string } | null>(null);
+  const [previewData, setPreviewData] = useState<{
+    type: string;
+    url: string;
+    filename: string;
+  } | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -152,6 +157,48 @@ export default function Files() {
     }
   };
 
+  const handlePreview = async (file: File) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch file');
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+
+      // Set preview data based on file type
+      if (file.file_type.startsWith('image/')) {
+        setPreviewData({
+          type: 'image',
+          url,
+          filename: file.original_filename
+        });
+      } else if (file.file_type === 'application/pdf') {
+        setPreviewData({
+          type: 'pdf',
+          url,
+          filename: file.original_filename
+        });
+      } else {
+        // For other file types, trigger download instead
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.original_filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      console.error('Error previewing file:', error);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       <Navigation />
@@ -232,14 +279,13 @@ export default function Files() {
                   ? 'border-gold bg-yellow-50'
                   : 'border-navy hover:border-gold'
               }`}
-              onClick={() => handleFileSelect(file.doc_id)}
+              onClick={() => handlePreview(file)}
             >
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-2" onClick={e => e.stopPropagation()}>
                 <input
                   type="checkbox"
                   checked={selectedFiles.includes(file.doc_id)}
                   onChange={() => handleFileSelect(file.doc_id)}
-                  onClick={(e) => e.stopPropagation()}
                   className="h-5 w-5"
                 />
                 <button
@@ -260,17 +306,57 @@ export default function Files() {
               <p className="text-sm text-gray-500">
                 {new Date(file.upload_date).toLocaleDateString()}
               </p>
+              <span className="material-symbols-rounded absolute right-2 bottom-2 text-gray-400">
+                {file.file_type.startsWith('image/') ? 'image' :
+                 file.file_type === 'application/pdf' ? 'picture_as_pdf' :
+                 'description'}
+              </span>
             </div>
           ))}
         </div>
       </div>
 
-      {previewImage && (
-        <ImagePreview
-          src={`http://127.0.0.1:5000/docs/file/${previewImage.id}`}
-          alt={previewImage.filename}
-          onClose={() => setPreviewImage(null)}
-        />
+      {previewData && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={() => {
+            URL.revokeObjectURL(previewData.url);
+            setPreviewData(null);
+          }}
+        >
+          <div 
+            className="bg-white rounded-lg p-4 max-w-4xl max-h-[90vh] w-full mx-4 overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold truncate">{previewData.filename}</h3>
+              <button 
+                onClick={() => {
+                  URL.revokeObjectURL(previewData.url);
+                  setPreviewData(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <span className="material-symbols-rounded">close</span>
+              </button>
+            </div>
+            <div className="overflow-auto max-h-[calc(90vh-8rem)]">
+              {previewData.type === 'image' ? (
+                <img 
+                  src={previewData.url} 
+                  alt={previewData.filename}
+                  className="max-w-full h-auto"
+                />
+              ) : previewData.type === 'pdf' ? (
+                <iframe
+                  src={previewData.url}
+                  className="w-full h-[80vh]"
+                  title={previewData.filename}
+                />
+              ) : null}
+            </div>
+          </div>
+        </div>
       )}
 
       {editingFile && (

@@ -208,11 +208,9 @@ def get_file(doc_id):
         file_type = mime.from_file(file_path)
         print(f"Detected mime type: {file_type}")  # Debug log
 
-        return send_file(
-            file_path,
-            mimetype=file_type,
-            as_attachment=False
-        )
+        response = send_file(file_path)
+        response.headers['Content-Type'] = document.file_type  # Make sure this is set
+        return response
 
     except jwt.InvalidTokenError as e:
         print(f"Invalid token error: {str(e)}")  # Debug log
@@ -220,3 +218,45 @@ def get_file(doc_id):
     except Exception as e:
         print(f"Error serving file: {str(e)}")  # Debug log
         return jsonify({'error': 'Failed to serve file'}), 500
+
+@docs_bp.route('/documents/<int:doc_id>', methods=['PATCH'])
+def update_document(doc_id):
+    user_id = get_user_id_from_token()
+    if not user_id:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    document = Document.query.filter_by(doc_id=doc_id, user_id=user_id).first()
+    if not document:
+        return jsonify({'error': 'Document not found'}), 404
+
+    try:
+        data = request.get_json()
+        new_filename = data.get('filename')
+        
+        if not new_filename:
+            return jsonify({'error': 'New filename is required'}), 400
+
+        # Update the file in local storage
+        old_file_path = os.path.join(UPLOAD_FOLDER, str(user_id), document.filename)
+        new_filename_with_timestamp = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{secure_filename(new_filename)}"
+        new_file_path = os.path.join(UPLOAD_FOLDER, str(user_id), new_filename_with_timestamp)
+
+        if os.path.exists(old_file_path):
+            os.rename(old_file_path, new_file_path)
+            
+            # Update database record
+            document.original_filename = new_filename
+            document.filename = new_filename_with_timestamp
+            document.last_modified = datetime.utcnow()
+            db.session.commit()
+            
+            return jsonify({
+                'message': 'Document updated successfully',
+                'document': document.to_dict()
+            }), 200
+        else:
+            return jsonify({'error': 'File not found in storage'}), 404
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
