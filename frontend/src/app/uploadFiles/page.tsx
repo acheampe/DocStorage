@@ -44,7 +44,7 @@ export default function UploadFiles() {
         }
         return file;
       });
-      setFiles(newFiles);
+      setFiles(prev => [...prev, ...newFiles]);
       setError('');
     }
   };
@@ -150,7 +150,7 @@ export default function UploadFiles() {
         }
         return file;
       });
-      setFiles(droppedFiles);
+      setFiles(prev => [...prev, ...droppedFiles]);
       setError('');
     }
   };

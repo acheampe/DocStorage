@@ -58,10 +58,6 @@ def upload_document():
             errors.append(f"{file.filename}: File type not allowed")
             continue
 
-        if file.content_length and file.content_length > MAX_FILE_SIZE:
-            errors.append(f"{file.filename}: File size exceeds maximum limit")
-            continue
-
         try:
             filename = secure_filename(file.filename)
             user_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], str(user_id))
@@ -71,18 +67,23 @@ def upload_document():
             unique_filename = f"{timestamp}_{filename}"
             file_path = os.path.join(user_folder, unique_filename)
             
+            # Save the file
             file.save(file_path)
             
+            # Get file type and size
             mime = magic.Magic(mime=True)
             file_type = mime.from_file(file_path)
+            file_size = os.path.getsize(file_path)
             
+            # Store relative path
             relative_path = os.path.join(str(user_id), unique_filename)
             
+            # Create document record
             document = Document(
                 filename=unique_filename,
                 original_filename=filename,
                 file_type=file_type,
-                file_size=os.path.getsize(file_path),
+                file_size=file_size,
                 file_path=relative_path,
                 user_id=user_id,
                 description=request.form.get('description', ''),
@@ -92,21 +93,45 @@ def upload_document():
             
             db.session.add(document)
             db.session.commit()
-            uploaded_documents.append(document.to_dict())
+            
+            uploaded_documents.append({
+                'doc_id': document.doc_id,
+                'filename': document.original_filename,
+                'file_type': document.file_type
+            })
             
         except Exception as e:
-            errors.append(f"{file.filename}: {str(e)}")
+            print(f"Error uploading {file.filename}: {str(e)}")
+            errors.append(f"{file.filename}: Upload failed")
+            # Rollback the session for this file
             db.session.rollback()
-            continue
+            # Try to clean up the file if it was saved
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except:
+                    pass
 
-    response_data = {
-        'uploaded_documents': uploaded_documents,
-        'errors': errors if errors else None
-    }
-
-    # Return 201 if at least one file was uploaded successfully
-    status_code = 201 if uploaded_documents else 500
-    return jsonify(response_data), status_code
+    # Determine response based on results
+    if not uploaded_documents and errors:
+        # All files failed
+        return jsonify({
+            'error': 'All uploads failed',
+            'errors': errors
+        }), 400
+    elif errors:
+        # Some files succeeded, some failed
+        return jsonify({
+            'message': 'Some files uploaded successfully',
+            'uploaded': uploaded_documents,
+            'errors': errors
+        }), 201
+    else:
+        # All files succeeded
+        return jsonify({
+            'message': 'All files uploaded successfully',
+            'uploaded': uploaded_documents
+        }), 201
 
 @docs_bp.route('/documents', methods=['GET'])
 def get_user_documents():
