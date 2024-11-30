@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Footer from '@/components/Footer'
 // import LockIcon from '@/components/LockIcon'
+import ImagePreview from '@/components/ImagePreview'
 
 interface User {
   user_id: number;
@@ -16,6 +17,7 @@ interface File {
   doc_id: number;
   original_filename: string;
   upload_date: string;
+  file_type: string;
 }
 
 function getFileIcon(filename: string): string {
@@ -45,6 +47,7 @@ export default function Dashboard() {
   const [recentFiles, setRecentFiles] = useState<File[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<{id: number, filename: string} | null>(null);
 
   useEffect(() => {
     try {
@@ -103,10 +106,16 @@ export default function Dashboard() {
           throw new Error('Failed to fetch recent files');
         }
         const data = await response.json();
-        setRecentFiles(data.files.map((file: { doc_id: string; original_filename: string; upload_date: string }) => ({
+        setRecentFiles(data.files.map((file: { 
+          doc_id: number; 
+          original_filename: string; 
+          upload_date: string;
+          file_type: string;
+        }) => ({
           doc_id: file.doc_id,
           original_filename: file.original_filename,
-          upload_date: file.upload_date
+          upload_date: file.upload_date,
+          file_type: file.file_type
         })));
       } catch (error) {
         console.error('Error fetching recent files:', error);
@@ -260,15 +269,47 @@ export default function Dashboard() {
               {recentFiles.map((file) => (
                 <div 
                   key={file.doc_id} 
-                  className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer"
+                  className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer flex flex-col"
+                  onClick={() => {
+                    if (file.file_type.startsWith('image/')) {
+                      setPreviewImage({
+                        id: file.doc_id,
+                        filename: file.original_filename
+                      });
+                    }
+                  }}
                 >
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="material-symbols-rounded text-navy">
-                      {getFileIcon(file.original_filename)}
-                    </span>
+                  <div className="mb-2">
+                    {file.file_type.startsWith('image/') ? (
+                      <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
+                        <img 
+                          src={`http://127.0.0.1:5000/docs/file/${file.doc_id}`}
+                          alt={file.original_filename}
+                          className="w-full h-40 object-cover rounded"
+                          crossOrigin="use-credentials"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            const parent = target.parentElement;
+                            if (parent) {
+                              const icon = document.createElement('span');
+                              icon.className = 'material-symbols-rounded text-navy text-4xl';
+                              icon.textContent = getFileIcon(file.original_filename);
+                              parent.appendChild(icon);
+                            }
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                        <span className="material-symbols-rounded text-navy text-4xl">
+                          {getFileIcon(file.original_filename)}
+                        </span>
+                      </div>
+                    )}
                     <h4 className="font-bold text-navy truncate">{file.original_filename}</h4>
                   </div>
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-gray-600 mt-auto">
                     {new Date(file.upload_date).toLocaleDateString()}
                   </p>
                 </div>
@@ -278,6 +319,13 @@ export default function Dashboard() {
         </section>
       </main>
       <Footer />
+      {previewImage && (
+        <ImagePreview
+          src={`http://127.0.0.1:5000/docs/file/${previewImage.id}`}
+          alt={previewImage.filename}
+          onClose={() => setPreviewImage(null)}
+        />
+      )}
     </div>
   );
 }
