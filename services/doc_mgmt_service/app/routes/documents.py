@@ -15,11 +15,16 @@ ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'doc', 'docx'}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 def get_user_id_from_token():
+    # Check Authorization header first
     auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith('Bearer '):
-        return None
+    if auth_header and auth_header.startswith('Bearer '):
+        token = auth_header.split(' ')[1]
+    else:
+        # Check query parameters
+        token = request.args.get('token')
+        if not token:
+            return None
     
-    token = auth_header.split(' ')[1]
     try:
         payload = jwt.decode(token, os.getenv('SECRET_KEY'), algorithms=['HS256'])
         return payload['user_id']
@@ -165,6 +170,38 @@ def get_recent_documents():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@docs_bp.route('/file/<int:doc_id>', methods=['GET'])
+@cross_origin(supports_credentials=True)
+def get_file(doc_id):
+    user_id = get_user_id_from_token()
+    if not user_id:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    try:
+        document = Document.query.filter_by(doc_id=doc_id, user_id=user_id).first()
+        if not document:
+            return jsonify({'error': 'File not found'}), 404
+
+        file_path = os.path.join(UPLOAD_FOLDER, str(user_id), document.filename)
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'File not found'}), 404
+
+        mime = magic.Magic(mime=True)
+        file_type = mime.from_file(file_path)
+
+        response = send_file(
+            file_path,
+            mimetype=file_type,
+            as_attachment=False
+        )
+        response.headers['Access-Control-Allow-Origin'] = 'http://localhost:3000'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        return response
+
+    except Exception as e:
+        print(f"Error serving file: {str(e)}")
+        return jsonify({'error': 'Failed to serve file'}), 500
 
 @docs_bp.after_request
 def after_request(response):

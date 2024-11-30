@@ -18,7 +18,7 @@ export default function ImagePreview({ src, alt, onClose }: ImagePreviewProps) {
       <div className="relative max-w-4xl max-h-[90vh]" onClick={e => e.stopPropagation()}>
         {!imageError ? (
           <img 
-            src={src} 
+            src={`${src}?token=${localStorage.getItem('token')}`}
             alt={alt} 
             className="max-w-full max-h-[90vh] object-contain bg-gray-50 rounded"
             crossOrigin="use-credentials"
