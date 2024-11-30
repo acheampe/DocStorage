@@ -174,39 +174,49 @@ def get_recent_documents():
 @docs_bp.route('/file/<int:doc_id>', methods=['GET'])
 @cross_origin(supports_credentials=True)
 def get_file(doc_id):
-    user_id = get_user_id_from_token()
-    if not user_id:
+    print("Headers received:", dict(request.headers))  # Debug log
+    
+    # Check Authorization header first
+    auth_header = request.headers.get('Authorization')
+    print("Auth header:", auth_header)  # Debug log
+    
+    if auth_header and auth_header.startswith('Bearer '):
+        token = auth_header.split(' ')[1]
+        print("Token extracted:", token)  # Debug log
+    else:
+        print("No valid Authorization header found")  # Debug log
         return jsonify({'error': 'Unauthorized'}), 401
-
+    
     try:
+        payload = jwt.decode(token, os.getenv('SECRET_KEY'), algorithms=['HS256'])
+        user_id = payload['user_id']
+        print(f"Decoded user_id: {user_id}")  # Debug log
+        
         document = Document.query.filter_by(doc_id=doc_id, user_id=user_id).first()
         if not document:
+            print(f"No document found for doc_id: {doc_id}, user_id: {user_id}")  # Debug log
             return jsonify({'error': 'File not found'}), 404
 
         file_path = os.path.join(UPLOAD_FOLDER, str(user_id), document.filename)
+        print(f"Attempting to serve file from: {file_path}")  # Debug log
+        
         if not os.path.exists(file_path):
+            print(f"File not found at path: {file_path}")  # Debug log
             return jsonify({'error': 'File not found'}), 404
 
         mime = magic.Magic(mime=True)
         file_type = mime.from_file(file_path)
+        print(f"Detected mime type: {file_type}")  # Debug log
 
-        response = send_file(
+        return send_file(
             file_path,
             mimetype=file_type,
             as_attachment=False
         )
-        response.headers['Access-Control-Allow-Origin'] = 'http://localhost:3000'
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        return response
 
+    except jwt.InvalidTokenError as e:
+        print(f"Invalid token error: {str(e)}")  # Debug log
+        return jsonify({'error': 'Invalid token'}), 401
     except Exception as e:
-        print(f"Error serving file: {str(e)}")
+        print(f"Error serving file: {str(e)}")  # Debug log
         return jsonify({'error': 'Failed to serve file'}), 500
-
-@docs_bp.after_request
-def after_request(response):
-    response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
-    return response
