@@ -16,3 +16,6 @@ usertxt.txt
 
 #ignore todo list
 todotxt.txt
+
+#ignore DocStorage
+DocStorageDocuments/*
