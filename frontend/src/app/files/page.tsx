@@ -19,6 +19,7 @@ export default function Files() {
   const [previewImage, setPreviewImage] = useState<{ id: number; filename: string } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [editingFile, setEditingFile] = useState<{ id: number; name: string } | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -123,6 +124,34 @@ export default function Files() {
     }
   };
 
+  const handleRename = async () => {
+    if (!editingFile) return;
+    
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`http://127.0.0.1:5000/docs/documents/${editingFile.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ filename: editingFile.name })
+      });
+
+      if (!response.ok) throw new Error('Failed to rename file');
+      
+      // Update local state
+      setFiles(files.map(file => 
+        file.doc_id === editingFile.id 
+          ? { ...file, original_filename: editingFile.name }
+          : file
+      ));
+      setEditingFile(null);
+    } catch (error) {
+      console.error('Error renaming file:', error);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       <Navigation />
@@ -198,7 +227,7 @@ export default function Files() {
           {files.map((file) => (
             <div
               key={file.doc_id}
-              className={`p-4 border-2 rounded-lg cursor-pointer transition-colors ${
+              className={`p-4 border-2 rounded-lg cursor-pointer transition-colors relative ${
                 selectedFiles.includes(file.doc_id)
                   ? 'border-gold bg-yellow-50'
                   : 'border-navy hover:border-gold'
@@ -213,20 +242,19 @@ export default function Files() {
                   onClick={(e) => e.stopPropagation()}
                   className="h-5 w-5"
                 />
-                {file.file_type.startsWith('image/') && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPreviewImage({
-                        id: file.doc_id,
-                        filename: file.original_filename
-                      });
-                    }}
-                    className="text-navy hover:text-gold"
-                  >
-                    Preview
-                  </button>
-                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingFile({ 
+                      id: file.doc_id, 
+                      name: file.original_filename 
+                    });
+                  }}
+                  className="text-navy hover:text-gold"
+                  title="Rename file"
+                >
+                  <span className="material-symbols-rounded">edit</span>
+                </button>
               </div>
               <p className="font-medium text-navy truncate">{file.original_filename}</p>
               <p className="text-sm text-gray-500">
@@ -243,6 +271,35 @@ export default function Files() {
           alt={previewImage.filename}
           onClose={() => setPreviewImage(null)}
         />
+      )}
+
+      {editingFile && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-96" onClick={e => e.stopPropagation()}>
+            <h3 className="text-xl font-bold mb-4">Rename File</h3>
+            <input
+              type="text"
+              value={editingFile.name}
+              onChange={e => setEditingFile({ ...editingFile, name: e.target.value })}
+              className="w-full px-3 py-2 border-2 border-navy rounded-lg mb-4 focus:outline-none focus:border-gold"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setEditingFile(null)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRename}
+                className="px-4 py-2 bg-gold text-white rounded-lg hover:bg-opacity-90"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
