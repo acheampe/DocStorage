@@ -25,6 +25,7 @@ export default function Files() {
     url: string;
     filename: string;
   } | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -134,6 +135,8 @@ export default function Files() {
     
     try {
       const token = localStorage.getItem('token');
+      console.log('Attempting to rename file:', editingFile);
+
       const response = await fetch(`http://127.0.0.1:5000/docs/documents/${editingFile.id}`, {
         method: 'PATCH',
         headers: {
@@ -143,17 +146,27 @@ export default function Files() {
         body: JSON.stringify({ filename: editingFile.name })
       });
 
-      if (!response.ok) throw new Error('Failed to rename file');
+      console.log('Response status:', response.status);
       
-      // Update local state
-      setFiles(files.map(file => 
-        file.doc_id === editingFile.id 
-          ? { ...file, original_filename: editingFile.name }
-          : file
-      ));
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Server error:', errorData);
+        throw new Error('Failed to rename file');
+      }
+      
+      const data = await response.json();
+      console.log('Success response:', data);
+      
+      // Refresh the file list after successful rename
+      await fetchAllFiles();
+      
       setEditingFile(null);
+      setSuccessMessage('File renamed successfully');
+      setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error) {
       console.error('Error renaming file:', error);
+      setSuccessMessage('Failed to rename file. Please try again.');
+      setTimeout(() => setSuccessMessage(null), 3000);
     }
   };
 
@@ -202,6 +215,13 @@ export default function Files() {
   return (
     <div className="min-h-screen flex flex-col">
       <Navigation />
+      
+      {successMessage && (
+        <div className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg transition-all duration-500 ease-in-out z-50 flex items-center gap-2">
+          <span className="material-symbols-rounded">check_circle</span>
+          {successMessage}
+        </div>
+      )}
       
       <div className="sticky top-0 bg-white shadow-md z-10 py-4 px-4 border-b">
         <div className="container mx-auto">
@@ -329,7 +349,24 @@ export default function Files() {
             onClick={e => e.stopPropagation()}
           >
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold truncate">{previewData.filename}</h3>
+              <div className="flex items-center gap-2 flex-1 mr-4">
+                <h3 className="text-xl font-bold truncate">{previewData.filename}</h3>
+                <button
+                  onClick={() => {
+                    const file = files.find(f => f.original_filename === previewData.filename);
+                    if (file) {
+                      setEditingFile({
+                        id: file.doc_id,
+                        name: file.original_filename
+                      });
+                    }
+                  }}
+                  className="text-navy hover:text-gold"
+                  title="Rename file"
+                >
+                  <span className="material-symbols-rounded">edit</span>
+                </button>
+              </div>
               <button 
                 onClick={() => {
                   URL.revokeObjectURL(previewData.url);
