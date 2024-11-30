@@ -48,6 +48,7 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<{id: number, filename: string} | null>(null);
+  const [imageUrls, setImageUrls] = useState<{ [key: number]: string }>({});
 
   useEffect(() => {
     try {
@@ -136,20 +137,53 @@ export default function Dashboard() {
 
   const fetchImageWithAuth = async (docId: number) => {
     const token = localStorage.getItem('token');
-    const response = await fetch(`http://127.0.0.1:5000/docs/file/${docId}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      },
-      credentials: 'include'
-    });
+    try {
+      const response = await fetch(`http://127.0.0.1:5000/docs/file/${docId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        credentials: 'include'
+      });
 
-    if (!response.ok) {
-      throw new Error('Failed to fetch image');
+      if (!response.ok) {
+        throw new Error('Failed to fetch image');
+      }
+
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    } catch (error) {
+      console.error('Error fetching image:', error);
+      throw error;
+    }
+  };
+
+  useEffect(() => {
+    const loadImages = async () => {
+      const newImageUrls: { [key: number]: string } = {};
+      
+      for (const file of recentFiles) {
+        if (file.file_type.startsWith('image/')) {
+          try {
+            const imageUrl = await fetchImageWithAuth(file.doc_id);
+            newImageUrls[file.doc_id] = imageUrl;
+          } catch (error) {
+            console.error(`Error loading image for file ${file.doc_id}:`, error);
+          }
+        }
+      }
+      
+      setImageUrls(newImageUrls);
+    };
+
+    if (recentFiles.length > 0) {
+      loadImages();
     }
 
-    const blob = await response.blob();
-    return URL.createObjectURL(blob);
-  };
+    // Cleanup function to revoke object URLs
+    return () => {
+      Object.values(imageUrls).forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [recentFiles]);
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -230,32 +264,40 @@ export default function Dashboard() {
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {recentFiles.slice(0, 6).map((file) => (
-            <div key={file.doc_id} className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer">
+            <div 
+              key={file.doc_id} 
+              className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer"
+              onClick={() => {
+                if (file.file_type.startsWith('image/')) {
+                  setPreviewImage({ id: file.doc_id, filename: file.original_filename });
+                }
+              }}
+            >
               <div className="mb-2">
                 {file.file_type.startsWith('image/') ? (
                   <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
-                    <img 
-                      src=""
-                      alt={file.original_filename}
-                      className="w-full h-40 object-cover rounded"
-                      onLoad={async (e) => {
-                        const img = e.target as HTMLImageElement;
-                        try {
-                          const imageUrl = await fetchImageWithAuth(file.doc_id);
-                          img.src = imageUrl;
-                        } catch (error) {
-                          console.error('Error loading image:', error);
-                          img.style.display = 'none';
-                          const parent = img.parentElement;
+                    {imageUrls[file.doc_id] ? (
+                      <img 
+                        src={imageUrls[file.doc_id]}
+                        alt={file.original_filename}
+                        className="w-full h-40 object-cover rounded"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          const parent = target.parentElement;
                           if (parent) {
                             const icon = document.createElement('span');
                             icon.className = 'material-symbols-rounded text-navy text-4xl';
                             icon.textContent = getFileIcon(file.original_filename);
                             parent.appendChild(icon);
                           }
-                        }
-                      }}
-                    />
+                        }}
+                      />
+                    ) : (
+                      <span className="material-symbols-rounded text-navy text-4xl animate-pulse">
+                        hourglass_empty
+                      </span>
+                    )}
                   </div>
                 ) : (
                   <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
