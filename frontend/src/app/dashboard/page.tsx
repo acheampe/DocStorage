@@ -201,87 +201,83 @@ export default function Dashboard() {
         )}
 
         {/* Recent Files Section */}
-        <section className="bg-white rounded-lg shadow-xl p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-2xl font-bold text-navy">Recent Files</h2>
-            {recentFiles.length > 0 && (
-              <Link 
-                href="/files"
-                className="bg-navy text-white px-6 py-2 rounded-lg hover:bg-opacity-90 transition-all"
-                title="View all your stored files"
-              >
-                View All Files
-              </Link>
-            )}
-          </div>
-          <div className="grid grid-cols-3 gap-6">
-            {recentFiles.slice(0, 6).map((file) => (
-              <div 
-                key={file.doc_id} 
-                className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer flex flex-col"
-                onClick={() => {
-                  if (file.file_type.startsWith('image/')) {
-                    setPreviewImage({
-                      id: file.doc_id,
-                      filename: file.original_filename
-                    });
-                  }
-                }}
-              >
-                <div className="mb-2">
-                  {file.file_type.startsWith('image/') ? (
-                    <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
-                      <img 
-                        src={`http://127.0.0.1:5000/docs/file/${file.doc_id}?token=${localStorage.getItem('token')}`}
-                        alt={file.original_filename}
-                        className="w-full h-40 object-cover rounded"
-                        crossOrigin="use-credentials"
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          target.style.display = 'none';
-                          const parent = target.parentElement;
-                          if (parent) {
-                            const icon = document.createElement('span');
-                            icon.className = 'material-symbols-rounded text-navy text-4xl';
-                            icon.textContent = getFileIcon(file.original_filename);
-                            parent.appendChild(icon);
-                          }
-                        }}
-                      />
-                    </div>
-                  ) : (
-                    <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
-                      <span className="material-symbols-rounded text-navy text-4xl">
-                        {getFileIcon(file.original_filename)}
-                      </span>
-                    </div>
-                  )}
-                  <h4 className="font-bold text-navy truncate">{file.original_filename}</h4>
-                </div>
-                <p className="text-sm text-gray-600 mt-auto">
-                  {new Date(file.upload_date).toLocaleDateString()}
-                </p>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-[#002B5B]">Recent Files</h2>
+          <Link
+            href="/files"
+            className="bg-[#002B5B] hover:bg-[#1B4B7D] text-white font-medium py-2 px-4 rounded"
+          >
+            View All Files
+          </Link>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {recentFiles.slice(0, 6).map((file) => (
+            <div 
+              key={file.doc_id} 
+              className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer flex flex-col"
+              onClick={() => {
+                if (file.file_type.startsWith('image/')) {
+                  setPreviewImage({
+                    id: file.doc_id,
+                    filename: file.original_filename
+                  });
+                }
+              }}
+            >
+              <div className="mb-2">
+                {file.file_type.startsWith('image/') ? (
+                  <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
+                    <img 
+                      src={`http://127.0.0.1:5000/docs/file/${file.doc_id}?token=${localStorage.getItem('token')}`}
+                      alt={file.original_filename}
+                      className="w-full h-40 object-cover rounded"
+                      crossOrigin="use-credentials"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                        const parent = target.parentElement;
+                        if (parent) {
+                          const icon = document.createElement('span');
+                          icon.className = 'material-symbols-rounded text-navy text-4xl';
+                          icon.textContent = getFileIcon(file.original_filename);
+                          parent.appendChild(icon);
+                        }
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                    <span className="material-symbols-rounded text-navy text-4xl">
+                      {getFileIcon(file.original_filename)}
+                    </span>
+                  </div>
+                )}
+                <h4 className="font-bold text-navy truncate">{file.original_filename}</h4>
               </div>
-            ))}
-            {Array.from({ length: Math.max(0, 6 - recentFiles.length) }).map((_, index) => (
-              <Link
-                key={`empty-${index}`}
-                href="/uploadFiles"
-                className="p-4 border-2 border-dashed border-navy rounded-lg hover:border-gold transition-colors cursor-pointer flex flex-col"
-              >
-                <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
-                  <span className="material-symbols-rounded text-navy text-4xl">
-                    add_circle
-                  </span>
-                </div>
-                <h4 className="font-bold text-navy text-center">Upload More Files</h4>
-                <p className="text-sm text-gray-600 mt-auto text-center">
-                  Click to add files
-                </p>
-              </Link>
-            ))}
-          </div>
-        </section>
+              <p className="text-sm text-gray-600 mt-auto">
+                {new Date(file.upload_date).toLocaleDateString()}
+              </p>
+            </div>
+          ))}
+          {Array.from({ length: Math.max(0, 6 - recentFiles.length) }).map((_, index) => (
+            <Link
+              key={`empty-${index}`}
+              href="/uploadFiles"
+              className="p-4 border-2 border-dashed border-navy rounded-lg hover:border-gold transition-colors cursor-pointer flex flex-col"
+            >
+              <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                <span className="material-symbols-rounded text-navy text-4xl">
+                  add_circle
+                </span>
+              </div>
+              <h4 className="font-bold text-navy text-center">Upload More Files</h4>
+              <p className="text-sm text-gray-600 mt-auto text-center">
+                Click to add files
+              </p>
+            </Link>
+          ))}
+        </div>
       </main>
       <Footer />
       {previewImage && (
