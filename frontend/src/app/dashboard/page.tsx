@@ -99,7 +99,8 @@ export default function Dashboard() {
         const response = await fetch('http://127.0.0.1:5000/docs/recent', {
           headers: {
             'Authorization': `Bearer ${token}`
-          }
+          },
+          credentials: 'include'
         });
 
         if (!response.ok) {
@@ -283,7 +284,7 @@ export default function Dashboard() {
                     {file.file_type.startsWith('image/') ? (
                       <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
                         <img 
-                          src={`http://127.0.0.1:5000/docs/file/${file.doc_id}`}
+                          src={`http://127.0.0.1:5000/docs/file/${file.doc_id}?token=${localStorage.getItem('token')}`}
                           alt={file.original_filename}
                           className="w-full h-40 object-cover rounded"
                           crossOrigin="use-credentials"
