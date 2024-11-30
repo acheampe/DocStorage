@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Footer from '@/components/Footer'
 // import LockIcon from '@/components/LockIcon'
+import ImagePreview from '@/components/ImagePreview'
 
 interface User {
   user_id: number;
@@ -13,9 +14,31 @@ interface User {
 }
 
 interface File {
-  id: number;
-  name: string;
-  uploaded_at: string;
+  doc_id: number;
+  original_filename: string;
+  upload_date: string;
+  file_type: string;
+}
+
+function getFileIcon(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  switch (ext) {
+    case 'pdf':
+      return 'picture_as_pdf';
+    case 'doc':
+    case 'docx':
+      return 'description';
+    case 'ppt':
+    case 'pptx':
+      return 'slideshow';
+    case 'jpg':
+    case 'jpeg':
+    case 'png':
+    case 'gif':
+      return 'image';
+    default:
+      return 'article';
+  }
 }
 
 export default function Dashboard() {
@@ -24,6 +47,7 @@ export default function Dashboard() {
   const [recentFiles, setRecentFiles] = useState<File[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<{id: number, filename: string} | null>(null);
 
   useEffect(() => {
     try {
@@ -57,16 +81,51 @@ export default function Dashboard() {
       setTimeout(() => {
         setUploadMessage(null);
         // Remove the query parameter
-        router.replace('/dashboard', undefined, { shallow: true });
+        router.replace('/dashboard');
       }, 3000);
     } else if (uploadStatus === 'partial') {
       setUploadMessage('Some files were uploaded successfully');
       setTimeout(() => {
         setUploadMessage(null);
-        router.replace('/dashboard', undefined, { shallow: true });
+        router.replace('/dashboard');
       }, 3000);
     }
   }, [router]);
+
+  useEffect(() => {
+    const fetchRecentFiles = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch('http://127.0.0.1:5000/docs/recent', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch recent files');
+        }
+        const data = await response.json();
+        setRecentFiles(data.files.map((file: { 
+          doc_id: number; 
+          original_filename: string; 
+          upload_date: string;
+          file_type: string;
+        }) => ({
+          doc_id: file.doc_id,
+          original_filename: file.original_filename,
+          upload_date: file.upload_date,
+          file_type: file.file_type
+        })));
+      } catch (error) {
+        console.error('Error fetching recent files:', error);
+      }
+    };
+
+    if (user) {
+      fetchRecentFiles();
+    }
+  }, [user]);
 
   const handleLogout = () => {
     localStorage.removeItem('user');
@@ -142,7 +201,18 @@ export default function Dashboard() {
 
         {/* Recent Files Section */}
         <section className="bg-white rounded-lg shadow-xl p-6">
-          <h2 className="text-2xl font-bold text-navy mb-4">Recent Files</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-bold text-navy">Recent Files</h2>
+            {recentFiles.length > 0 && (
+              <Link 
+                href="/files"
+                className="bg-navy text-white px-6 py-2 rounded-lg hover:bg-opacity-90 transition-all"
+                title="View all your stored files"
+              >
+                View All Files
+              </Link>
+            )}
+          </div>
           {recentFiles.length === 0 ? (
             <div className="text-center">
               <div className="grid grid-cols-3 gap-2 mb-4 max-w-lg mx-auto">
@@ -196,10 +266,52 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="grid grid-cols-3 gap-6">
-              {recentFiles.slice(0, 6).map((file) => (
-                <div key={file.id} className="p-4 border border-navy rounded-lg">
-                  <h4 className="font-bold">{file.name}</h4>
-                  <p className="text-sm">{file.uploaded_at}</p>
+              {recentFiles.map((file) => (
+                <div 
+                  key={file.doc_id} 
+                  className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer flex flex-col"
+                  onClick={() => {
+                    if (file.file_type.startsWith('image/')) {
+                      setPreviewImage({
+                        id: file.doc_id,
+                        filename: file.original_filename
+                      });
+                    }
+                  }}
+                >
+                  <div className="mb-2">
+                    {file.file_type.startsWith('image/') ? (
+                      <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
+                        <img 
+                          src={`http://127.0.0.1:5000/docs/file/${file.doc_id}`}
+                          alt={file.original_filename}
+                          className="w-full h-40 object-cover rounded"
+                          crossOrigin="use-credentials"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            const parent = target.parentElement;
+                            if (parent) {
+                              const icon = document.createElement('span');
+                              icon.className = 'material-symbols-rounded text-navy text-4xl';
+                              icon.textContent = getFileIcon(file.original_filename);
+                              parent.appendChild(icon);
+                            }
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                        <span className="material-symbols-rounded text-navy text-4xl">
+                          {getFileIcon(file.original_filename)}
+                        </span>
+                      </div>
+                    )}
+                    <h4 className="font-bold text-navy truncate">{file.original_filename}</h4>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-auto">
+                    {new Date(file.upload_date).toLocaleDateString()}
+                  </p>
                 </div>
               ))}
             </div>
@@ -207,6 +319,13 @@ export default function Dashboard() {
         </section>
       </main>
       <Footer />
+      {previewImage && (
+        <ImagePreview
+          src={`http://127.0.0.1:5000/docs/file/${previewImage.id}`}
+          alt={previewImage.filename}
+          onClose={() => setPreviewImage(null)}
+        />
+      )}
     </div>
   );
 }
