@@ -61,14 +61,34 @@ def docs_service(path):
         
         # Handle file uploads differently
         if request.files:
-            files = {
-                key: (value.filename, value.stream, value.content_type)
-                for key, value in request.files.items()
-            }
+            print("Files received in gateway:", request.files.keys())
+            print("Number of files:", len(request.files.getlist('files[]')))
+            
+            # Create a list of files for each file in the request
+            files = []
+            for key in request.files.keys():
+                if key.endswith('[]'):  # Handle array-style file inputs
+                    file_list = request.files.getlist(key)
+                    print(f"Processing {len(file_list)} files for key {key}")
+                    for file in file_list:
+                        print(f"Adding file: {file.filename}")
+                        files.append(
+                            ('files[]', (file.filename, file.stream, file.content_type))
+                        )
+                else:
+                    file = request.files[key]
+                    print(f"Adding single file: {file.filename}")
+                    files.append(
+                        (key, (file.filename, file.stream, file.content_type))
+                    )
+
             headers = {
                 k: v for k, v in request.headers.items()
                 if k.lower() not in ['host', 'content-length', 'content-type']
             }
+            
+            print("Forwarding files to docs service:", [f[1][0] for f in files])
+            
             response = requests.request(
                 method=request.method,
                 url=f"{service_url}/docs/{path}",
@@ -78,6 +98,10 @@ def docs_service(path):
                 cookies=request.cookies,
                 allow_redirects=False
             )
+            
+            print("Response from docs service:", response.status_code)
+            if response.status_code != 201:
+                print("Error response:", response.content)
         else:
             response = requests.request(
                 method=request.method,

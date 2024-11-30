@@ -62,46 +62,45 @@ export default function UploadFiles() {
 
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (files.length === 0) {
-      setError('Please select at least one file');
-      return;
-    }
+    if (files.length === 0) return;
 
     setUploading(true);
+    setError('');
+
     try {
-      const token = localStorage.getItem('token');
       const formData = new FormData();
+      console.log('Files to upload:', files.length);
       
-      files.forEach(file => {
+      files.forEach((file, index) => {
+        console.log(`Appending file ${index + 1}:`, file.name);
         formData.append('files[]', file);
       });
+
+      // Log the FormData contents (for debugging)
+      for (let pair of formData.entries()) {
+        console.log('FormData entry:', pair[0], pair[1]);
+      }
 
       const response = await fetch('http://127.0.0.1:5000/docs/upload', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
-        body: formData
+        body: formData,
       });
 
-      const data = await response.json();
-      
-      if (response.status === 201) {
-        if (data.errors) {
-          setError(`Some files failed to upload: ${data.errors.join(', ')}`);
-          setTimeout(() => {
-            router.push('/dashboard?upload=partial');
-          }, 2000);
-        } else {
-          router.push('/dashboard?upload=success');
-        }
-        return;
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Upload failed');
       }
 
-      throw new Error(data.error || 'Upload failed');
-    } catch (err) {
+      const result = await response.json();
+      console.log('Upload response:', result);
+
+      router.push('/dashboard');
+    } catch (err: any) {
       console.error('Upload error:', err);
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      setError(err.message);
     } finally {
       setUploading(false);
     }
@@ -150,7 +149,7 @@ export default function UploadFiles() {
         }
         return file;
       });
-      setFiles(prev => [...prev, ...droppedFiles]);
+      setFiles(droppedFiles);
       setError('');
     }
   };
