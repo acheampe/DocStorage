@@ -18,4 +18,4 @@ usertxt.txt
 todotxt.txt
 
 #ignore DocStorage
-DocStorageDocuments/*
+DocStorageDocuments
