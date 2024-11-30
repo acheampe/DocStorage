@@ -214,109 +214,73 @@ export default function Dashboard() {
               </Link>
             )}
           </div>
-          {recentFiles.length === 0 ? (
-            <div className="text-center">
-              <div className="grid grid-cols-3 gap-2 mb-4 max-w-lg mx-auto">
-                <span 
-                  className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]"
-                  title="Store and view presentations"
-                >
-                  slideshow
-                </span>
-                <span 
-                  className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]"
-                  title="Store and view documents"
-                >
-                  description
-                </span>
-                <span 
-                  className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]"
-                  title="Store and view PDFs"
-                >
-                  picture_as_pdf
-                </span>
-                <span 
-                  className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]"
-                  title="Store and view images"
-                >
-                  image
-                </span>
-                <span 
-                  className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]"
-                  title="Organize files in folders"
-                >
-                  folder
-                </span>
-                <span 
-                  className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]"
-                  title="Store and view articles"
-                >
-                  article
-                </span>
-              </div>
-              <h3 className="text-2xl font-bold text-navy mb-4">
-                Upload files to store for DocStorage to display
-              </h3>
-              <Link 
-                href="/files"
-                className="inline-block bg-navy text-white px-6 py-2 rounded-lg hover:bg-opacity-90 transition-all"
-                title="View all your stored files"
+          <div className="grid grid-cols-3 gap-6">
+            {recentFiles.slice(0, 6).map((file) => (
+              <div 
+                key={file.doc_id} 
+                className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer flex flex-col"
+                onClick={() => {
+                  if (file.file_type.startsWith('image/')) {
+                    setPreviewImage({
+                      id: file.doc_id,
+                      filename: file.original_filename
+                    });
+                  }
+                }}
               >
-                View All Files
-              </Link>
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 gap-6">
-              {recentFiles.map((file) => (
-                <div 
-                  key={file.doc_id} 
-                  className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer flex flex-col"
-                  onClick={() => {
-                    if (file.file_type.startsWith('image/')) {
-                      setPreviewImage({
-                        id: file.doc_id,
-                        filename: file.original_filename
-                      });
-                    }
-                  }}
-                >
-                  <div className="mb-2">
-                    {file.file_type.startsWith('image/') ? (
-                      <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
-                        <img 
-                          src={`http://127.0.0.1:5000/docs/file/${file.doc_id}?token=${localStorage.getItem('token')}`}
-                          alt={file.original_filename}
-                          className="w-full h-40 object-cover rounded"
-                          crossOrigin="use-credentials"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = 'none';
-                            const parent = target.parentElement;
-                            if (parent) {
-                              const icon = document.createElement('span');
-                              icon.className = 'material-symbols-rounded text-navy text-4xl';
-                              icon.textContent = getFileIcon(file.original_filename);
-                              parent.appendChild(icon);
-                            }
-                          }}
-                        />
-                      </div>
-                    ) : (
-                      <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
-                        <span className="material-symbols-rounded text-navy text-4xl">
-                          {getFileIcon(file.original_filename)}
-                        </span>
-                      </div>
-                    )}
-                    <h4 className="font-bold text-navy truncate">{file.original_filename}</h4>
-                  </div>
-                  <p className="text-sm text-gray-600 mt-auto">
-                    {new Date(file.upload_date).toLocaleDateString()}
-                  </p>
+                <div className="mb-2">
+                  {file.file_type.startsWith('image/') ? (
+                    <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
+                      <img 
+                        src={`http://127.0.0.1:5000/docs/file/${file.doc_id}?token=${localStorage.getItem('token')}`}
+                        alt={file.original_filename}
+                        className="w-full h-40 object-cover rounded"
+                        crossOrigin="use-credentials"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          const parent = target.parentElement;
+                          if (parent) {
+                            const icon = document.createElement('span');
+                            icon.className = 'material-symbols-rounded text-navy text-4xl';
+                            icon.textContent = getFileIcon(file.original_filename);
+                            parent.appendChild(icon);
+                          }
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                      <span className="material-symbols-rounded text-navy text-4xl">
+                        {getFileIcon(file.original_filename)}
+                      </span>
+                    </div>
+                  )}
+                  <h4 className="font-bold text-navy truncate">{file.original_filename}</h4>
                 </div>
-              ))}
-            </div>
-          )}
+                <p className="text-sm text-gray-600 mt-auto">
+                  {new Date(file.upload_date).toLocaleDateString()}
+                </p>
+              </div>
+            ))}
+            {Array.from({ length: Math.max(0, 6 - recentFiles.length) }).map((_, index) => (
+              <Link
+                key={`empty-${index}`}
+                href="/uploadFiles"
+                className="p-4 border-2 border-dashed border-navy rounded-lg hover:border-gold transition-colors cursor-pointer flex flex-col"
+              >
+                <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                  <span className="material-symbols-rounded text-navy text-4xl">
+                    add_circle
+                  </span>
+                </div>
+                <h4 className="font-bold text-navy text-center">Upload More Files</h4>
+                <p className="text-sm text-gray-600 mt-auto text-center">
+                  Click to add files
+                </p>
+              </Link>
+            ))}
+          </div>
         </section>
       </main>
       <Footer />

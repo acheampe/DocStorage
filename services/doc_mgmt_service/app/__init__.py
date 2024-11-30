@@ -1,13 +1,11 @@
 from flask import Flask
-from .extensions import db
-from .config import Config
 from flask_cors import CORS
+from .config import Config
+from .extensions import db  # Import db from extensions
 import os
 
 def create_app():
     app = Flask(__name__)
-    
-    # Configure your app
     app.config.from_object(Config)
     
     # Initialize CORS
@@ -16,7 +14,8 @@ def create_app():
             "origins": ["http://localhost:3000"],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization"],
-            "supports_credentials": True
+            "supports_credentials": True,
+            "expose_headers": ["Content-Type", "Authorization"]
         }
     })
     
