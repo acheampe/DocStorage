@@ -134,6 +134,23 @@ export default function Dashboard() {
     router.push('/');
   };
 
+  const fetchImageWithAuth = async (docId: number) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`http://127.0.0.1:5000/docs/file/${docId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch image');
+    }
+
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-white">
       {/* Navigation Bar */}
@@ -213,35 +230,29 @@ export default function Dashboard() {
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {recentFiles.slice(0, 6).map((file) => (
-            <div 
-              key={file.doc_id} 
-              className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer flex flex-col"
-              onClick={() => {
-                if (file.file_type.startsWith('image/')) {
-                  setPreviewImage({
-                    id: file.doc_id,
-                    filename: file.original_filename
-                  });
-                }
-              }}
-            >
+            <div key={file.doc_id} className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer">
               <div className="mb-2">
                 {file.file_type.startsWith('image/') ? (
                   <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
                     <img 
-                      src={`http://127.0.0.1:5000/docs/file/${file.doc_id}?token=${localStorage.getItem('token')}`}
+                      src=""
                       alt={file.original_filename}
                       className="w-full h-40 object-cover rounded"
-                      crossOrigin="use-credentials"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
-                        const parent = target.parentElement;
-                        if (parent) {
-                          const icon = document.createElement('span');
-                          icon.className = 'material-symbols-rounded text-navy text-4xl';
-                          icon.textContent = getFileIcon(file.original_filename);
-                          parent.appendChild(icon);
+                      onLoad={async (e) => {
+                        const img = e.target as HTMLImageElement;
+                        try {
+                          const imageUrl = await fetchImageWithAuth(file.doc_id);
+                          img.src = imageUrl;
+                        } catch (error) {
+                          console.error('Error loading image:', error);
+                          img.style.display = 'none';
+                          const parent = img.parentElement;
+                          if (parent) {
+                            const icon = document.createElement('span');
+                            icon.className = 'material-symbols-rounded text-navy text-4xl';
+                            icon.textContent = getFileIcon(file.original_filename);
+                            parent.appendChild(icon);
+                          }
                         }
                       }}
                     />
@@ -253,8 +264,8 @@ export default function Dashboard() {
                     </span>
                   </div>
                 )}
-                <h4 className="font-bold text-navy truncate">{file.original_filename}</h4>
               </div>
+              <h4 className="font-bold text-navy truncate">{file.original_filename}</h4>
               <p className="text-sm text-gray-600 mt-auto">
                 {new Date(file.upload_date).toLocaleDateString()}
               </p>

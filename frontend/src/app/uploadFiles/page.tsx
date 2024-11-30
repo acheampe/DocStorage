@@ -39,7 +39,10 @@ export default function UploadFiles() {
     if (e.target.files) {
       const newFiles = Array.from(e.target.files).map(file => {
         if (file.type.startsWith('image/')) {
-          const preview = URL.createObjectURL(file);
+          const token = localStorage.getItem('token');
+          const preview = file.type.startsWith('image/') 
+            ? URL.createObjectURL(file)  // Use blob URL for local preview before upload
+            : null;
           return Object.assign(file, { preview });
         }
         return file;
@@ -76,15 +79,15 @@ export default function UploadFiles() {
         formData.append('files[]', file);
       });
 
-      // Log the FormData contents (for debugging)
-      for (let pair of formData.entries()) {
-        console.log('FormData entry:', pair[0], pair[1]);
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('No authentication token found');
       }
 
       const response = await fetch('http://127.0.0.1:5000/docs/upload', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${token}`,
         },
         body: formData,
       });
@@ -97,6 +100,7 @@ export default function UploadFiles() {
       const result = await response.json();
       console.log('Upload response:', result);
 
+      await new Promise(resolve => setTimeout(resolve, 1000));
       router.push('/dashboard');
     } catch (err: any) {
       console.error('Upload error:', err);
@@ -152,6 +156,52 @@ export default function UploadFiles() {
       setFiles(droppedFiles);
       setError('');
     }
+  };
+
+  // Add this function to get authenticated file URL
+  const getFileUrl = (fileId: number) => {
+    const token = localStorage.getItem('token');
+    return `http://127.0.0.1:5000/docs/file/${fileId}`;
+  };
+
+  // Add this function to create headers for file requests
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token');
+    return {
+      'Authorization': `Bearer ${token}`
+    };
+  };
+
+  // Add this function to handle file previews
+  const getFilePreviewUrl = (fileId: number) => {
+    const token = localStorage.getItem('token');
+    return `http://127.0.0.1:5000/docs/file/${fileId}?token=${token}`;
+  };
+
+  // Modify the file preview component to use authenticated requests
+  const FilePreview = ({ file, index }: { file: FileWithPreview; index: number }) => {
+    const [previewError, setPreviewError] = useState(false);
+
+    return (
+      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+        <div className="flex items-center space-x-3">
+          <span className="material-symbols-rounded text-navy">
+            {file.type.startsWith('image/') ? 'image' : 'description'}
+          </span>
+          <span className="text-navy truncate max-w-xs">
+            {file.name}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => removeFile(index)}
+          className="text-red-500 hover:text-red-700"
+          title="Remove file"
+        >
+          <span className="material-symbols-rounded">close</span>
+        </button>
+      </div>
+    );
   };
 
   return (
@@ -226,27 +276,7 @@ export default function UploadFiles() {
                 <h3 className="font-medium text-navy">Selected Files:</h3>
                 <div className="space-y-2">
                   {files.map((file, index) => (
-                    <div 
-                      key={index}
-                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                    >
-                      <div className="flex items-center space-x-3">
-                        <span className="material-symbols-rounded text-navy">
-                          {file.type.startsWith('image/') ? 'image' : 'description'}
-                        </span>
-                        <span className="text-navy truncate max-w-xs">
-                          {file.name}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeFile(index)}
-                        className="text-red-500 hover:text-red-700"
-                        title="Remove file"
-                      >
-                        <span className="material-symbols-rounded">close</span>
-                      </button>
-                    </div>
+                    <FilePreview key={index} file={file} index={index} />
                   ))}
                 </div>
               </div>
