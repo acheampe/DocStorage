@@ -100,16 +100,19 @@ def docs_file_service(path):
         )
         print(f"Gateway: Response status: {response.status_code}")
         
-        # Don't try to decode binary responses
-        if 'image' in response.headers.get('Content-Type', ''):
-            return Response(
-                response.content,
-                status=response.status_code,
-                headers={'Content-Type': response.headers['Content-Type']}
-            )
-            
-        # For non-binary responses, decode as usual
-        return response.content.decode()
+        # Create response with proper headers
+        gateway_response = Response(
+            response.content,
+            status=response.status_code,
+            headers={
+                'Content-Type': response.headers.get('Content-Type', 'application/octet-stream'),
+                'Content-Disposition': response.headers.get('Content-Disposition', ''),
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
+        
+        return gateway_response
         
     except Exception as e:
         print(f"Gateway error: {str(e)}")

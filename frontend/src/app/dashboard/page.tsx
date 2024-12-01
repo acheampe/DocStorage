@@ -49,6 +49,11 @@ export default function Dashboard() {
   const [previewImage, setPreviewImage] = useState<{id: number, filename: string} | null>(null);
   const [imageUrls, setImageUrls] = useState<{ [key: number]: string }>({});
   const [previewUrls, setPreviewUrls] = useState<{ [key: number]: string }>({});
+  const [previewData, setPreviewData] = useState<{
+    type: string;
+    url: string;
+    filename: string;
+  } | null>(null);
 
   useEffect(() => {
     try {
@@ -222,6 +227,70 @@ export default function Dashboard() {
     };
   }, [previewImage]);
 
+  const handlePreview = async (file: File) => {
+    try {
+      const token = localStorage.getItem('token');
+      
+      // For Office documents and text files, include token in URL
+      if (
+        file.file_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || // docx
+        file.file_type === 'application/msword' || // doc
+        file.file_type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || // xlsx
+        file.file_type === 'application/vnd.ms-excel' || // xls
+        file.file_type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' || // pptx
+        file.file_type === 'application/vnd.ms-powerpoint' || // ppt
+        file.file_type === 'text/plain' // txt
+      ) {
+        // Create a blob URL with authorization
+        const response = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (!response.ok) throw new Error('Failed to fetch file');
+        
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        
+        // Open in new tab and clean up after delay
+        window.open(url, '_blank');
+        setTimeout(() => {
+          URL.revokeObjectURL(url);
+        }, 1000);
+        return;
+      }
+
+      // For other file types (images, PDFs), continue with existing preview logic
+      const response = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch file');
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+
+      if (file.file_type.startsWith('image/')) {
+        setPreviewData({
+          type: 'image',
+          url,
+          filename: file.original_filename
+        });
+      } else if (file.file_type === 'application/pdf') {
+        setPreviewData({
+          type: 'pdf',
+          url,
+          filename: file.original_filename
+        });
+      }
+    } catch (error) {
+      console.error('Error previewing file:', error);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-white">
       {/* Navigation Bar */}
@@ -304,14 +373,7 @@ export default function Dashboard() {
             <div 
               key={file.doc_id} 
               className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer"
-              onClick={() => {
-                if (file.file_type.startsWith('image/')) {
-                  setPreviewImage({ 
-                    id: file.doc_id, 
-                    filename: file.original_filename 
-                  });
-                }
-              }}
+              onClick={() => handlePreview(file)}
             >
               <div className="mb-2">
                 {file.file_type.startsWith('image/') ? (
@@ -373,10 +435,13 @@ export default function Dashboard() {
         </div>
       </main>
       <Footer />
-      {previewImage && (
+      {previewData && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-          onClick={() => setPreviewImage(null)}
+          onClick={() => {
+            URL.revokeObjectURL(previewData.url);
+            setPreviewData(null);
+          }}
         >
           <div 
             className="bg-white rounded-lg p-4 max-w-4xl max-h-[90vh] w-full mx-4 overflow-hidden"
@@ -384,22 +449,32 @@ export default function Dashboard() {
           >
             <div className="flex justify-between items-center mb-4">
               <div className="flex items-center gap-2 flex-1 mr-4">
-                <h3 className="text-xl font-bold truncate">{previewImage.filename}</h3>
+                <h3 className="text-xl font-bold truncate">{previewData.filename}</h3>
               </div>
               <button 
-                onClick={() => setPreviewImage(null)}
+                onClick={() => {
+                  URL.revokeObjectURL(previewData.url);
+                  setPreviewData(null);
+                }}
                 className="text-gray-500 hover:text-gray-700"
               >
                 <span className="material-symbols-rounded">close</span>
               </button>
             </div>
             <div className="overflow-auto max-h-[calc(90vh-8rem)]">
-              <img 
-                src={previewUrls[previewImage.id] || `/placeholder-image.png`}
-                alt={previewImage.filename}
-                className="max-w-full h-auto mx-auto"
-                loading="lazy"
-              />
+              {previewData.type === 'image' ? (
+                <img 
+                  src={previewData.url} 
+                  alt={previewData.filename}
+                  className="max-w-full h-auto mx-auto"
+                />
+              ) : previewData.type === 'pdf' ? (
+                <iframe
+                  src={previewData.url}
+                  className="w-full h-[80vh]"
+                  title={previewData.filename}
+                />
+              ) : null}
             </div>
           </div>
         </div>
