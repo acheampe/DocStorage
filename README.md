@@ -68,8 +68,11 @@
 
 5. **Share Service** (Port: 3004) [Planned]
    - Document sharing between users
+   - Allow users to share documents with other registered users via their unique ID (email) so they see the same document in their own DocStorage.
+   - Store shared document information (such as document ID, sharer, and recipient).
    - Access control management
-   - Share link generation
+   - Handle permissions for shared documents (e.g., view-only, download).
+   - Ability to revoke document access.
 
 ## Project Structure
 
