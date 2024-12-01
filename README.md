@@ -1,129 +1,176 @@
-
 # DocStorage
 
 ## Overview
 
-**DocStorage** is a simplified version of the on-going InfoVault project. It reflects a microservice architecture and allows users to register, store documents, search for them, and share documents with other registered users. This project does not utilize AWS services like infovault and instead relies on local storage for backend services.
+**DocStorage** is a microservice-based document management system that allows users to securely store, manage, and share documents. The system features a modern React frontend and a microservices backend architecture. It is a simplified version of the on-going InfoVault project.
+
+## Features
+
+- **User Authentication**
+  - Secure registration and login
+  - JWT-based authentication
+  - Session management
+
+- **Document Management**
+  - File upload with drag-and-drop support
+  - Multi-file upload capability
+  - File preview (images, PDFs)
+  - Secure document download
+  - Thumbnail generation for images
+  - Recent files tracking
+
+- **User Interface**
+  - Responsive dashboard
+  - Grid view for documents
+  - File type icons
+  - Search functionality
+  - Preview modal for supported formats
 
 ## Tech Stack
 
-- **Backend:**
-  - Python (Flask) / or any stack that programmer is comfortable with. 
-  - PostgreSQL
-  - JWT (for authentication)
-  
-- **Frontend:**
-  - React
-  - Tailwind CSS
+### Frontend
+- **Framework:** Next.js 14
+- **UI Library:** React 18
+- **Styling:** Tailwind CSS
+- **Icons:** Material Symbols
+- **State Management:** React Hooks
 
-## Microservices
+### Backend
+- **API Gateway:** Flask
+- **Authentication Service:** Flask + JWT
+- **Document Service:** Flask + Local Storage
+- **Database:** PostgreSQL
+- **File Storage:** Local filesystem (configurable)
 
-1. **Authentication Service**  
-   Handles user registration, login, and authentication using JWT tokens.
+## Architecture
 
-2. **Document Management Service**  
-   Manages document storage, retrieval, and metadata. Documents are stored locally.
+### Microservices
+1. **API Gateway** (Port: 5000)
+   - Routes requests to appropriate services
+   - Handles CORS and basic request validation
+   - Manages service discovery
 
-3. **Search Service**  
-   Allows users to search for documents by metadata such as name or category.
+2. **Authentication Service** (Port: 3001)
+   - User registration and login
+   - JWT token generation and validation
+   - User profile management
 
-4. **Share Service**  
-   Enables users to share documents with other registered users, verifying the recipient before granting access.
+3. **Document Management Service** (Port: 3002)
+   - File upload and storage
+   - Document metadata management
+   - File preview and thumbnail generation
+   - Recent files tracking
+
+4. **Search Service** (Port: 3003) [Planned]
+   - Document search functionality
+   - Metadata indexing
+   - Full-text search capabilities
+
+5. **Share Service** (Port: 3004) [Planned]
+   - Document sharing between users
+   - Access control management
+   - Share link generation
 
 ## Project Structure
 
 ```bash
 docstorage/
 ├── services/
-│   ├── auth_service/          # Authentication service
+│   ├── gateway/                # API Gateway Service
+│   │   ├── main.py
+│   │   ├── requirements.txt
+│   │   └── config.py
+│   │
+│   ├── auth_service/          # Authentication Service
 │   │   ├── app/
 │   │   │   ├── __init__.py
-│   │   │   ├── config.py
 │   │   │   ├── models/
-│   │   │   └── routes/
+│   │   │   │   ├── __init__.py
+│   │   │   │   └── user.py
+│   │   │   ├── routes/
+│   │   │   │   ├── __init__.py
+│   │   │   │   └── auth.py
+│   │   │   └── utils/
+│   │   │       ├── __init__.py
+│   │   │       └── jwt_utils.py
+│   │   ├── config.py
 │   │   ├── requirements.txt
 │   │   └── run.py
-│   ├── doc_mgmt_service/      # Future document service
-│   ├── search_service/        # Future search service
-│   └── share_service/         # Future share service
-├── frontend/                  # Next.js frontend
+│   │
+│   ├── doc_service/           # Document Management Service
+│   │   ├── app/
+│   │   │   ├── __init__.py
+│   │   │   ├── models/
+│   │   │   │   ├── __init__.py
+│   │   │   │   └── document.py
+│   │   │   ├── routes/
+│   │   │   │   ├── __init__.py
+│   │   │   │   └── documents.py
+│   │   │   └── utils/
+│   │   │       ├── __init__.py
+│   │   │       └── file_utils.py
+│   │   ├── config.py
+│   │   ├── requirements.txt
+│   │   └── run.py
+│   │
+│   ├── search_service/        # Future Search Service
+│   └── share_service/         # Future Share Service
+│
+├── frontend/
 │   ├── src/
 │   │   ├── app/
-│   │   └── components/
+│   │   │   ├── dashboard/
+│   │   │   │   └── page.tsx
+│   │   │   ├── files/
+│   │   │   │   └── page.tsx
+│   │   │   ├── login/
+│   │   │   │   └── page.tsx
+│   │   │   ├── register/
+│   │   │   │   └── page.tsx
+│   │   │   └── uploadFiles/
+│   │   │       └── page.tsx
+│   │   ├── components/
+│   │   │   ├── Footer.tsx
+│   │   │   ├── Navigation.tsx
+│   │   │   └── ImagePreview.tsx
+│   │   └── styles/
+│   │       └── globals.css
 │   ├── public/
+│   │   └── assets/
 │   └── package.json
-├── database/                  # Database schemas
-│   └── AuthServiceDDL.sql
-├── DocStorageDocuments/       # Local storage
-├── main.py
-├── requirement.txt
-└── .gitignore
-
+│
+├── database/
+│   ├── init.sql              # Database initialization
+│   ├── auth_schema.sql       # Auth service schema
+│   └── doc_schema.sql        # Document service schema
+│
+├── docs/                     # Documentation
+│   ├── api.md               # API documentation
+│   ├── setup.md             # Setup guide
+│   └── architecture.md      # Architecture details
+│
+├── .env.example             # Environment variables template
+├── docker-compose.yml       # Docker configuration
+├── requirements.txt         # Global Python dependencies
+└── README.md               # Project documentation
 ```
 
 ## Setup Instructions
 
-### Backend
+[Detailed setup instructions moved to docs/setup.md]
 
-1. **Clone the repository:**
+## API Documentation
 
-   ```bash
-   git clone https://github.com/acheampe/DocStorage.git
-   cd docstorage
-   ```
+[API documentation moved to docs/api.md]
 
-2. **Set up virtual environment:**
+## Contributing
 
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # For Mac/Linux
-   venv\Scripts\activate   # For Windows
-   ```
-
-3. **Install Python dependencies:**
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Run each Flask microservice**:
-
-   - Start the **auth_service**:
-   
-     ```bash
-     cd auth_service
-     flask run
-     ```
-
-   - Repeat for `doc_mgmt_service`, `search_service`, and `share_service`.
-
-### Frontend
-
-1. **Navigate to the frontend directory:**
-
-   ```bash
-   cd frontend
-   ```
-
-2. **Install frontend dependencies:**
-
-   ```bash
-   npm install
-   ```
-
-3. **Run the frontend server:**
-
-   ```bash
-   npm start
-   ```
-
-## Future Enhancements
-
-- Add file type restrictions for document uploads.
-- Implement rate limiting for API endpoints.
-- Integrate more advanced search capabilities.
-- Improve document sharing access control and permissions.
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License - see the LICENSE file for details.

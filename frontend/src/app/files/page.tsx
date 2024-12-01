@@ -94,10 +94,15 @@ export default function Files() {
         })
       ));
 
+      setSuccessMessage(`${selectedFiles.length} ${selectedFiles.length === 1 ? 'file' : 'files'} deleted successfully`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+
       fetchAllFiles(); // Refresh the file list
       setSelectedFiles([]); // Clear selection
     } catch (error) {
       console.error('Error deleting files:', error);
+      setSuccessMessage('Failed to delete files. Please try again.');
+      setTimeout(() => setSuccessMessage(null), 3000);
     }
   };
 
@@ -105,28 +110,53 @@ export default function Files() {
     if (!selectedFiles.length) return;
 
     try {
-      const token = localStorage.getItem('token');
-      
-      selectedFiles.forEach(async (docId) => {
-        const response = await fetch(`http://127.0.0.1:5000/docs/documents/${docId}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
+        const token = localStorage.getItem('token');
+        let successCount = 0;
         
-        if (!response.ok) throw new Error('Download failed');
+        for (const docId of selectedFiles) {
+            try {
+                const response = await fetch(`http://127.0.0.1:5000/docs/documents/${docId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!response.ok) throw new Error('Download failed');
+                
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = files.find(f => f.doc_id === docId)?.original_filename || 'download';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                successCount++;
+            } catch (error) {
+                console.error(`Error downloading file ${docId}:`, error);
+            }
+        }
+
+        // Show success message based on how many files were downloaded
+        if (successCount === selectedFiles.length) {
+            setSuccessMessage(`${successCount} ${successCount === 1 ? 'file' : 'files'} downloaded successfully`);
+        } else if (successCount > 0) {
+            setSuccessMessage(`${successCount} out of ${selectedFiles.length} files downloaded successfully`);
+        } else {
+            setSuccessMessage('Failed to download files. Please try again.');
+        }
         
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = files.find(f => f.doc_id === docId)?.original_filename || 'download';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      });
+        // Clear the message after 3 seconds
+        setTimeout(() => setSuccessMessage(null), 3000);
+        
+        // Clear selection after download
+        setSelectedFiles([]);
+        
     } catch (error) {
-      console.error('Error downloading files:', error);
+        console.error('Error downloading files:', error);
+        setSuccessMessage('Failed to download files. Please try again.');
+        setTimeout(() => setSuccessMessage(null), 3000);
     }
   };
 
@@ -146,8 +176,6 @@ export default function Files() {
         body: JSON.stringify({ filename: editingFile.name })
       });
 
-      console.log('Response status:', response.status);
-      
       if (!response.ok) {
         const errorData = await response.json();
         console.error('Server error:', errorData);

@@ -4,7 +4,6 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Footer from '@/components/Footer'
 // import LockIcon from '@/components/LockIcon'
-import ImagePreview from '@/components/ImagePreview'
 
 interface User {
   user_id: number;
@@ -48,6 +47,13 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<{id: number, filename: string} | null>(null);
+  const [imageUrls, setImageUrls] = useState<{ [key: number]: string }>({});
+  const [previewUrls, setPreviewUrls] = useState<{ [key: number]: string }>({});
+  const [previewData, setPreviewData] = useState<{
+    type: string;
+    url: string;
+    filename: string;
+  } | null>(null);
 
   useEffect(() => {
     try {
@@ -134,6 +140,157 @@ export default function Dashboard() {
     router.push('/');
   };
 
+  const fetchThumbnail = async (fileId: number): Promise<string> => {
+    try {
+      const response = await fetch(`http://127.0.0.1:5000/docs/file/${fileId}/thumbnail`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    } catch (error) {
+      console.error('Error fetching thumbnail:', error);
+      // Return a placeholder image URL or null
+      return '/placeholder-image.png';
+    }
+  };
+
+  useEffect(() => {
+    const loadImages = async () => {
+      const newImageUrls: { [key: number]: string } = {};
+      
+      for (const file of recentFiles) {
+        try {
+          const thumbnailUrl = await fetchThumbnail(file.doc_id);
+          if (thumbnailUrl) {
+            newImageUrls[file.doc_id] = thumbnailUrl;
+          }
+        } catch (error) {
+          console.error(`Error loading thumbnail for file ${file.doc_id}:`, error);
+        }
+      }
+      
+      setImageUrls(newImageUrls);
+    };
+
+    if (recentFiles.length > 0) {
+      loadImages();
+    }
+
+    return () => {
+      Object.values(imageUrls).forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [recentFiles]);
+
+  const fetchFullImage = async (fileId: number): Promise<string> => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`http://127.0.0.1:5000/docs/file/${fileId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    } catch (error) {
+      console.error('Error fetching full image:', error);
+      return '/placeholder-image.png';
+    }
+  };
+
+  useEffect(() => {
+    if (previewImage) {
+      fetchFullImage(previewImage.id).then(url => {
+        setPreviewUrls(prev => ({
+          ...prev,
+          [previewImage.id]: url
+        }));
+      });
+    }
+    
+    // Cleanup function
+    return () => {
+      if (previewImage && previewUrls[previewImage.id]) {
+        URL.revokeObjectURL(previewUrls[previewImage.id]);
+      }
+    };
+  }, [previewImage]);
+
+  const handlePreview = async (file: File) => {
+    try {
+      const token = localStorage.getItem('token');
+      
+      // For Office documents and text files, include token in URL
+      if (
+        file.file_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || // docx
+        file.file_type === 'application/msword' || // doc
+        file.file_type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || // xlsx
+        file.file_type === 'application/vnd.ms-excel' || // xls
+        file.file_type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' || // pptx
+        file.file_type === 'application/vnd.ms-powerpoint' || // ppt
+        file.file_type === 'text/plain' // txt
+      ) {
+        // Create a blob URL with authorization
+        const response = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (!response.ok) throw new Error('Failed to fetch file');
+        
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        
+        // Open in new tab and clean up after delay
+        window.open(url, '_blank');
+        setTimeout(() => {
+          URL.revokeObjectURL(url);
+        }, 1000);
+        return;
+      }
+
+      // For other file types (images, PDFs), continue with existing preview logic
+      const response = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch file');
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+
+      if (file.file_type.startsWith('image/')) {
+        setPreviewData({
+          type: 'image',
+          url,
+          filename: file.original_filename
+        });
+      } else if (file.file_type === 'application/pdf') {
+        setPreviewData({
+          type: 'pdf',
+          url,
+          filename: file.original_filename
+        });
+      }
+    } catch (error) {
+      console.error('Error previewing file:', error);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-white">
       {/* Navigation Bar */}
@@ -201,41 +358,31 @@ export default function Dashboard() {
         )}
 
         {/* Recent Files Section */}
-        <section className="bg-white rounded-lg shadow-xl p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-2xl font-bold text-navy">Recent Files</h2>
-            {recentFiles.length > 0 && (
-              <Link 
-                href="/files"
-                className="bg-navy text-white px-6 py-2 rounded-lg hover:bg-opacity-90 transition-all"
-                title="View all your stored files"
-              >
-                View All Files
-              </Link>
-            )}
-          </div>
-          <div className="grid grid-cols-3 gap-6">
-            {recentFiles.slice(0, 6).map((file) => (
-              <div 
-                key={file.doc_id} 
-                className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer flex flex-col"
-                onClick={() => {
-                  if (file.file_type.startsWith('image/')) {
-                    setPreviewImage({
-                      id: file.doc_id,
-                      filename: file.original_filename
-                    });
-                  }
-                }}
-              >
-                <div className="mb-2">
-                  {file.file_type.startsWith('image/') ? (
-                    <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-[#002B5B]">Recent Files</h2>
+          <Link
+            href="/files"
+            className="bg-[#002B5B] hover:bg-[#1B4B7D] text-white font-medium py-2 px-4 rounded"
+          >
+            View All Files
+          </Link>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {recentFiles.slice(0, 6).map((file) => (
+            <div 
+              key={file.doc_id} 
+              className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer"
+              onClick={() => handlePreview(file)}
+            >
+              <div className="mb-2">
+                {file.file_type.startsWith('image/') ? (
+                  <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
+                    {imageUrls[file.doc_id] ? (
                       <img 
-                        src={`http://127.0.0.1:5000/docs/file/${file.doc_id}?token=${localStorage.getItem('token')}`}
+                        src={imageUrls[file.doc_id]}
                         alt={file.original_filename}
                         className="w-full h-40 object-cover rounded"
-                        crossOrigin="use-credentials"
                         onError={(e) => {
                           const target = e.target as HTMLImageElement;
                           target.style.display = 'none';
@@ -248,48 +395,89 @@ export default function Dashboard() {
                           }
                         }}
                       />
-                    </div>
-                  ) : (
-                    <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
-                      <span className="material-symbols-rounded text-navy text-4xl">
-                        {getFileIcon(file.original_filename)}
+                    ) : (
+                      <span className="material-symbols-rounded text-navy text-4xl animate-pulse">
+                        hourglass_empty
                       </span>
-                    </div>
-                  )}
-                  <h4 className="font-bold text-navy truncate">{file.original_filename}</h4>
-                </div>
-                <p className="text-sm text-gray-600 mt-auto">
-                  {new Date(file.upload_date).toLocaleDateString()}
-                </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                    <span className="material-symbols-rounded text-navy text-4xl">
+                      {getFileIcon(file.original_filename)}
+                    </span>
+                  </div>
+                )}
               </div>
-            ))}
-            {Array.from({ length: Math.max(0, 6 - recentFiles.length) }).map((_, index) => (
-              <Link
-                key={`empty-${index}`}
-                href="/uploadFiles"
-                className="p-4 border-2 border-dashed border-navy rounded-lg hover:border-gold transition-colors cursor-pointer flex flex-col"
-              >
-                <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
-                  <span className="material-symbols-rounded text-navy text-4xl">
-                    add_circle
-                  </span>
-                </div>
-                <h4 className="font-bold text-navy text-center">Upload More Files</h4>
-                <p className="text-sm text-gray-600 mt-auto text-center">
-                  Click to add files
-                </p>
-              </Link>
-            ))}
-          </div>
-        </section>
+              <h4 className="font-bold text-navy truncate">{file.original_filename}</h4>
+              <p className="text-sm text-gray-600 mt-auto">
+                {new Date(file.upload_date).toLocaleDateString()}
+              </p>
+            </div>
+          ))}
+          {Array.from({ length: Math.max(0, 6 - recentFiles.length) }).map((_, index) => (
+            <Link
+              key={`empty-${index}`}
+              href="/uploadFiles"
+              className="p-4 border-2 border-dashed border-navy rounded-lg hover:border-gold transition-colors cursor-pointer flex flex-col"
+            >
+              <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                <span className="material-symbols-rounded text-navy text-4xl">
+                  add_circle
+                </span>
+              </div>
+              <h4 className="font-bold text-navy text-center">Upload More Files</h4>
+              <p className="text-sm text-gray-600 mt-auto text-center">
+                Click to add files
+              </p>
+            </Link>
+          ))}
+        </div>
       </main>
       <Footer />
-      {previewImage && (
-        <ImagePreview
-          src={`http://127.0.0.1:5000/docs/file/${previewImage.id}`}
-          alt={previewImage.filename}
-          onClose={() => setPreviewImage(null)}
-        />
+      {previewData && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={() => {
+            URL.revokeObjectURL(previewData.url);
+            setPreviewData(null);
+          }}
+        >
+          <div 
+            className="bg-white rounded-lg p-4 max-w-4xl max-h-[90vh] w-full mx-4 overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-2 flex-1 mr-4">
+                <h3 className="text-xl font-bold truncate">{previewData.filename}</h3>
+              </div>
+              <button 
+                onClick={() => {
+                  URL.revokeObjectURL(previewData.url);
+                  setPreviewData(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <span className="material-symbols-rounded">close</span>
+              </button>
+            </div>
+            <div className="overflow-auto max-h-[calc(90vh-8rem)]">
+              {previewData.type === 'image' ? (
+                <img 
+                  src={previewData.url} 
+                  alt={previewData.filename}
+                  className="max-w-full h-auto mx-auto"
+                />
+              ) : previewData.type === 'pdf' ? (
+                <iframe
+                  src={previewData.url}
+                  className="w-full h-[80vh]"
+                  title={previewData.filename}
+                />
+              ) : null}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
