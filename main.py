@@ -3,6 +3,7 @@ from flask_cors import CORS
 import requests
 import os
 from dotenv import load_dotenv
+import traceback
 
 load_dotenv()
 
@@ -91,31 +92,52 @@ def docs_service(path):
         print(f"Gateway error: {str(e)}")
         return jsonify({'error': 'Document service unavailable'}), 503
 
-@app.route('/docs/file/<path:path>', methods=['GET'])
+@app.route('/docs/file/<path:path>', methods=['GET', 'OPTIONS'])
 def docs_file_service(path):
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
     try:
-        response = requests.get(
-            f'http://127.0.0.1:3002/docs/file/{path}',
-            headers=get_forwarded_headers(request),
-        )
-        print(f"Gateway: Response status: {response.status_code}")
+        service_url = SERVICES['docs']
+        target_url = f"{service_url}/docs/file/{path}"
         
-        # Create response with proper headers
-        gateway_response = Response(
-            response.content,
+        # Forward all headers including Authorization
+        headers = get_forwarded_headers(request)
+        print(f"Gateway: Forwarding GET request to: {target_url}")
+        print(f"Gateway: Headers being forwarded: {headers}")
+        
+        response = requests.get(
+            target_url,
+            headers=headers,
+            cookies=request.cookies,
+            allow_redirects=False,
+            stream=True  # Add streaming for large files
+        )
+        
+        print(f"Gateway: Response from docs service: {response.status_code}")
+        
+        # Create streaming response
+        return Response(
+            response.iter_content(chunk_size=8192),
             status=response.status_code,
             headers={
                 'Content-Type': response.headers.get('Content-Type', 'application/octet-stream'),
                 'Content-Disposition': response.headers.get('Content-Disposition', ''),
                 'Access-Control-Allow-Origin': 'http://localhost:3000',
-                'Access-Control-Allow-Credentials': 'true'
-            }
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization'
+            },
+            direct_passthrough=True
         )
-        
-        return gateway_response
         
     except Exception as e:
         print(f"Gateway error: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/docs/documents', methods=['GET'])
@@ -182,6 +204,81 @@ def get_recent_files():
     except requests.exceptions.RequestException as e:
         print(f"Gateway error: {str(e)}")
         return jsonify({'error': 'Document service unavailable'}), 503
+
+@app.route('/search', methods=['GET', 'OPTIONS'])
+def search_service():
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        service_url = SERVICES['search']
+        target_url = f"{service_url}/search?{request.query_string.decode()}"
+        
+        print(f"Gateway: Forwarding GET request to: {target_url}")
+        print(f"Gateway: Headers being forwarded: {get_forwarded_headers(request)}")
+        
+        response = requests.get(
+            target_url,
+            headers=get_forwarded_headers(request),
+            timeout=5
+        )
+        
+        print(f"Gateway: Response status: {response.status_code}")
+        if response.status_code != 200:
+            print(f"Gateway: Error response: {response.text}")
+            return jsonify({'error': 'Search failed'}), response.status_code
+        
+        return Response(
+            response.content,
+            status=200,
+            headers={
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Origin': 'http://localhost:3000'
+            }
+        )
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error: {str(e)}")
+        return jsonify({'error': 'Search service unavailable'}), 503
+
+@app.route('/search/index', methods=['POST', 'OPTIONS'])
+def index_document():
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'POST,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        service_url = SERVICES['search']
+        target_url = f"{service_url}/search/index"
+        
+        print(f"Gateway: Forwarding POST request to: {target_url}")
+        
+        response = requests.post(
+            target_url,
+            headers=get_forwarded_headers(request),
+            json=request.get_json()
+        )
+        
+        gateway_response = make_response(response.content)
+        gateway_response.headers['Access-Control-Allow-Credentials'] = 'true'
+        gateway_response.headers['Access-Control-Allow-Origin'] = 'http://localhost:3000'
+        gateway_response.status_code = response.status_code
+        
+        return gateway_response
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error: {str(e)}")
+        return jsonify({'error': 'Search service unavailable'}), 503
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000)

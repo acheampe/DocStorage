@@ -19,6 +19,12 @@ interface File {
   file_type: string;
 }
 
+interface PreviewData {
+  type: string;
+  url: string;
+  filename: string;
+}
+
 function getFileIcon(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase();
   switch (ext) {
@@ -45,15 +51,12 @@ export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [recentFiles, setRecentFiles] = useState<File[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
-  const [previewImage, setPreviewImage] = useState<{id: number, filename: string} | null>(null);
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [imageUrls, setImageUrls] = useState<{ [key: number]: string }>({});
-  const [previewUrls, setPreviewUrls] = useState<{ [key: number]: string }>({});
-  const [previewData, setPreviewData] = useState<{
-    type: string;
-    url: string;
-    filename: string;
-  } | null>(null);
+  const [searchResults, setSearchResults] = useState<File[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -82,17 +85,17 @@ export default function Dashboard() {
     const uploadStatus = searchParams.get('upload');
     
     if (uploadStatus === 'success') {
-      setUploadMessage('Files uploaded successfully!');
+      setSuccessMessage('Files uploaded successfully!');
       // Clear the message after 3 seconds
       setTimeout(() => {
-        setUploadMessage(null);
+        setSuccessMessage(null);
         // Remove the query parameter
         router.replace('/dashboard');
       }, 3000);
     } else if (uploadStatus === 'partial') {
-      setUploadMessage('Some files were uploaded successfully');
+      setSuccessMessage('Some files were uploaded successfully');
       setTimeout(() => {
-        setUploadMessage(null);
+        setSuccessMessage(null);
         router.replace('/dashboard');
       }, 3000);
     }
@@ -188,84 +191,63 @@ export default function Dashboard() {
     };
   }, [recentFiles]);
 
-  const fetchFullImage = async (fileId: number): Promise<string> => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`http://127.0.0.1:5000/docs/file/${fileId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const blob = await response.blob();
-      return URL.createObjectURL(blob);
-    } catch (error) {
-      console.error('Error fetching full image:', error);
-      return '/placeholder-image.png';
-    }
-  };
-
+  // Add debounced search
   useEffect(() => {
-    if (previewImage) {
-      fetchFullImage(previewImage.id).then(url => {
-        setPreviewUrls(prev => ({
-          ...prev,
-          [previewImage.id]: url
-        }));
-      });
-    }
-    
-    // Cleanup function
-    return () => {
-      if (previewImage && previewUrls[previewImage.id]) {
-        URL.revokeObjectURL(previewUrls[previewImage.id]);
+    const searchDocuments = async () => {
+      if (!searchQuery.trim()) {
+        setSearchResults([]);
+        setIsSearching(false);
+        return;
+      }
+
+      setIsSearching(true);
+      setSearchError(null);
+
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(
+          `http://127.0.0.1:5000/search?q=${encodeURIComponent(searchQuery)}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            credentials: 'include'
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error('Search failed');
+        }
+
+        const data = await response.json();
+        setSearchResults(data.results.map((result: any) => ({
+          doc_id: result.doc_id,
+          original_filename: result.metadata.filename,
+          upload_date: result.metadata.upload_date,
+          file_type: result.metadata.file_type
+        })));
+      } catch (error) {
+        console.error('Error searching documents:', error);
+        setSearchError('Failed to search documents');
+      } finally {
+        setIsSearching(false);
       }
     };
-  }, [previewImage]);
+
+    // Debounce the search to avoid too many requests
+    const timeoutId = setTimeout(searchDocuments, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
 
   const handlePreview = async (file: File) => {
     try {
       const token = localStorage.getItem('token');
-      
-      // For Office documents and text files, include token in URL
-      if (
-        file.file_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || // docx
-        file.file_type === 'application/msword' || // doc
-        file.file_type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || // xlsx
-        file.file_type === 'application/vnd.ms-excel' || // xls
-        file.file_type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' || // pptx
-        file.file_type === 'application/vnd.ms-powerpoint' || // ppt
-        file.file_type === 'text/plain' // txt
-      ) {
-        // Create a blob URL with authorization
-        const response = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        
-        if (!response.ok) throw new Error('Failed to fetch file');
-        
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        
-        // Open in new tab and clean up after delay
-        window.open(url, '_blank');
-        setTimeout(() => {
-          URL.revokeObjectURL(url);
-        }, 1000);
-        return;
-      }
-
-      // For other file types (images, PDFs), continue with existing preview logic
       const response = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
         headers: {
           'Authorization': `Bearer ${token}`
-        }
+        },
+        credentials: 'include'
       });
 
       if (!response.ok) throw new Error('Failed to fetch file');
@@ -273,6 +255,7 @@ export default function Dashboard() {
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
 
+      // Set preview data based on file type
       if (file.file_type.startsWith('image/')) {
         setPreviewData({
           type: 'image',
@@ -285,11 +268,31 @@ export default function Dashboard() {
           url,
           filename: file.original_filename
         });
+      } else {
+        // For other file types, trigger download instead
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.original_filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
       }
     } catch (error) {
       console.error('Error previewing file:', error);
     }
   };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const success = params.get('success');
+    if (success) {
+      setSuccessMessage(decodeURIComponent(success));
+      setTimeout(() => setSuccessMessage(null), 3000);
+      // Clean up URL
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -317,6 +320,13 @@ export default function Dashboard() {
           </div>
         </div>
       </nav>
+
+      {successMessage && (
+        <div className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg transition-all duration-500 ease-in-out z-50 flex items-center gap-2">
+          <span className="material-symbols-rounded">check_circle</span>
+          {successMessage}
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="flex-grow container mx-auto p-8">
@@ -347,33 +357,40 @@ export default function Dashboard() {
             className="material-symbols-rounded absolute left-4 top-1/2 -translate-y-1/2 text-navy opacity-50"
             title="Search icon"
           >
-            search
+            {isSearching ? 'hourglass_empty' : 'search'}
           </span>
         </div>
 
-        {uploadMessage && (
-          <div className="mb-6 p-4 bg-green-100 text-green-700 rounded-lg text-center transition-opacity duration-500">
-            {uploadMessage}
+        {searchError && (
+          <div className="mb-6 p-4 bg-red-100 text-red-700 rounded-lg">
+            {searchError}
           </div>
         )}
 
-        {/* Recent Files Section */}
+        {/* Files Grid */}
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-[#002B5B]">Recent Files</h2>
-          <Link
-            href="/files"
-            className="bg-[#002B5B] hover:bg-[#1B4B7D] text-white font-medium py-2 px-4 rounded"
-          >
-            View All Files
-          </Link>
+          <h2 className="text-2xl font-bold text-[#002B5B]">
+            {searchQuery ? 'Search Results' : 'Recent Files'}
+          </h2>
+          {!searchQuery && (
+            <Link
+              href="/files"
+              className="bg-[#002B5B] hover:bg-[#1B4B7D] text-white font-medium py-2 px-4 rounded"
+            >
+              View All Files
+            </Link>
+          )}
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {recentFiles.slice(0, 6).map((file) => (
+          {/* Show either search results or recent files */}
+          {(searchQuery ? searchResults : recentFiles).map((file) => (
             <div 
               key={file.doc_id} 
               className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer"
-              onClick={() => handlePreview(file)}
+              onClick={() => {
+                handlePreview(file);
+              }}
             >
               <div className="mb-2">
                 {file.file_type.startsWith('image/') ? (
@@ -415,7 +432,9 @@ export default function Dashboard() {
               </p>
             </div>
           ))}
-          {Array.from({ length: Math.max(0, 6 - recentFiles.length) }).map((_, index) => (
+          
+          {/* Only show upload placeholders for recent files view */}
+          {!searchQuery && Array.from({ length: Math.max(0, 6 - recentFiles.length) }).map((_, index) => (
             <Link
               key={`empty-${index}`}
               href="/uploadFiles"
@@ -448,9 +467,7 @@ export default function Dashboard() {
             onClick={e => e.stopPropagation()}
           >
             <div className="flex justify-between items-center mb-4">
-              <div className="flex items-center gap-2 flex-1 mr-4">
-                <h3 className="text-xl font-bold truncate">{previewData.filename}</h3>
-              </div>
+              <h3 className="text-xl font-bold truncate">{previewData.filename}</h3>
               <button 
                 onClick={() => {
                   URL.revokeObjectURL(previewData.url);
@@ -466,7 +483,7 @@ export default function Dashboard() {
                 <img 
                   src={previewData.url} 
                   alt={previewData.filename}
-                  className="max-w-full h-auto mx-auto"
+                  className="max-w-full h-auto"
                 />
               ) : previewData.type === 'pdf' ? (
                 <iframe

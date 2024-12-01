@@ -15,6 +15,7 @@ from PIL import Image
 import traceback
 from io import BytesIO
 import logging
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +205,38 @@ def upload_document():
             db.session.add(document)
             db.session.commit()
             
+            # After successful upload, index the document through the API gateway
+            try:
+                index_payload = {
+                    'doc_id': document.doc_id,
+                    'content_text': '',
+                    'doc_metadata': {
+                        'filename': document.original_filename,
+                        'upload_date': document.upload_date.isoformat(),
+                        'file_type': document.file_type,
+                        'description': document.description
+                    }
+                }
+                print(f"Sending index request with payload: {index_payload}")  # Debug log
+                
+                index_response = requests.post(
+                    'http://127.0.0.1:5000/search/index',
+                    json=index_payload,
+                    headers={
+                        'Authorization': request.headers.get('Authorization'),
+                        'Content-Type': 'application/json'
+                    }
+                )
+                
+                print(f"Index response status: {index_response.status_code}")  # Debug log
+                print(f"Index response text: {index_response.text}")  # Debug log
+                
+                if not index_response.ok:
+                    print(f"Warning: Failed to index document {document.doc_id}: {index_response.text}")
+            except Exception as index_error:
+                print(f"Error indexing document {document.doc_id}: {str(index_error)}")
+                # Don't fail the upload if indexing fails
+            
             uploaded_documents.append({
                 'id': document.doc_id,
                 'filename': document.original_filename,
@@ -386,7 +419,7 @@ def get_file_thumbnail(file_id):
 
 @docs_bp.route('/docs/documents/<int:doc_id>', methods=['PATCH', 'OPTIONS'])
 @cross_origin(
-    origins=["http://localhost:3000"],
+    origins=["http://localhost:3000", "http://localhost:5000"],
     methods=['PATCH', 'OPTIONS'],
     allow_headers=['Content-Type', 'Authorization'],
     supports_credentials=True

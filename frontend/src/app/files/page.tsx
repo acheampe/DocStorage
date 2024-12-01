@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import ImagePreview from '@/components/ImagePreview';
 import Navigation from '@/components/Navigation';
 
 interface File {
@@ -16,7 +15,6 @@ export default function Files() {
   const router = useRouter();
   const [files, setFiles] = useState<File[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<number[]>([]);
-  const [previewImage, setPreviewImage] = useState<{ id: number; filename: string } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingFile, setEditingFile] = useState<{ id: number; name: string } | null>(null);
@@ -26,6 +24,9 @@ export default function Files() {
     filename: string;
   } | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<File[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -36,6 +37,54 @@ export default function Files() {
 
     fetchAllFiles();
   }, [router]);
+
+  useEffect(() => {
+    const searchDocuments = async () => {
+      if (!searchQuery.trim()) {
+        setSearchResults([]);
+        setIsSearching(false);
+        return;
+      }
+
+      setIsSearching(true);
+      setSearchError(null);
+
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(
+          `http://127.0.0.1:5000/search?q=${encodeURIComponent(searchQuery)}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            credentials: 'include'
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error('Search failed');
+        }
+
+        const data = await response.json();
+        setSearchResults(data.results.map((result: any) => ({
+          doc_id: result.doc_id,
+          original_filename: result.metadata.filename,
+          upload_date: result.metadata.upload_date,
+          file_type: result.metadata.file_type
+        })));
+      } catch (error) {
+        console.error('Error searching documents:', error);
+        setSearchError('Failed to search documents');
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    // Debounce the search to avoid too many requests
+    const timeoutId = setTimeout(searchDocuments, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
 
   const fetchAllFiles = async () => {
     try {
@@ -265,7 +314,7 @@ export default function Files() {
                   className="w-full px-4 py-2 border-2 border-navy rounded-lg focus:outline-none focus:border-gold"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 material-symbols-rounded text-navy">
-                  search
+                  {isSearching ? 'hourglass_empty' : 'search'}
                 </span>
               </div>
             </div>
@@ -318,50 +367,56 @@ export default function Files() {
       </div>
 
       <div className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {files.map((file) => (
-            <div
-              key={file.doc_id}
-              className={`p-4 border-2 rounded-lg cursor-pointer transition-colors relative ${
-                selectedFiles.includes(file.doc_id)
-                  ? 'border-gold bg-yellow-50'
-                  : 'border-navy hover:border-gold'
-              }`}
-              onClick={() => handlePreview(file)}
-            >
-              <div className="flex items-center justify-between mb-2" onClick={e => e.stopPropagation()}>
-                <input
-                  type="checkbox"
-                  checked={selectedFiles.includes(file.doc_id)}
-                  onChange={() => handleFileSelect(file.doc_id)}
-                  className="h-5 w-5"
-                />
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditingFile({ 
-                      id: file.doc_id, 
-                      name: file.original_filename 
-                    });
-                  }}
-                  className="text-navy hover:text-gold"
-                  title="Rename file"
-                >
-                  <span className="material-symbols-rounded">edit</span>
-                </button>
+        {isLoading ? (
+          <div className="flex justify-center items-center h-64">
+            <span className="material-symbols-rounded text-4xl animate-spin">hourglass_empty</span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {(searchQuery ? searchResults : files).map((file) => (
+              <div
+                key={file.doc_id}
+                className={`p-4 border-2 rounded-lg cursor-pointer transition-colors relative ${
+                  selectedFiles.includes(file.doc_id)
+                    ? 'border-gold bg-yellow-50'
+                    : 'border-navy hover:border-gold'
+                }`}
+                onClick={() => handlePreview(file)}
+              >
+                <div className="flex items-center justify-between mb-2" onClick={e => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={selectedFiles.includes(file.doc_id)}
+                    onChange={() => handleFileSelect(file.doc_id)}
+                    className="h-5 w-5"
+                  />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingFile({ 
+                        id: file.doc_id, 
+                        name: file.original_filename 
+                      });
+                    }}
+                    className="text-navy hover:text-gold"
+                    title="Rename file"
+                  >
+                    <span className="material-symbols-rounded">edit</span>
+                  </button>
+                </div>
+                <p className="font-medium text-navy truncate">{file.original_filename}</p>
+                <p className="text-sm text-gray-500">
+                  {new Date(file.upload_date).toLocaleDateString()}
+                </p>
+                <span className="material-symbols-rounded absolute right-2 bottom-2 text-gray-400">
+                  {file.file_type.startsWith('image/') ? 'image' :
+                   file.file_type === 'application/pdf' ? 'picture_as_pdf' :
+                   'description'}
+                </span>
               </div>
-              <p className="font-medium text-navy truncate">{file.original_filename}</p>
-              <p className="text-sm text-gray-500">
-                {new Date(file.upload_date).toLocaleDateString()}
-              </p>
-              <span className="material-symbols-rounded absolute right-2 bottom-2 text-gray-400">
-                {file.file_type.startsWith('image/') ? 'image' :
-                 file.file_type === 'application/pdf' ? 'picture_as_pdf' :
-                 'description'}
-              </span>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {previewData && (
@@ -450,6 +505,12 @@ export default function Files() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {searchError && (
+        <div className="mb-6 p-4 bg-red-100 text-red-700 rounded-lg">
+          {searchError}
         </div>
       )}
     </div>
