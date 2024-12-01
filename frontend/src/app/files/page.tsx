@@ -26,6 +26,9 @@ export default function Files() {
     filename: string;
   } | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<File[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -36,6 +39,54 @@ export default function Files() {
 
     fetchAllFiles();
   }, [router]);
+
+  useEffect(() => {
+    const searchDocuments = async () => {
+      if (!searchQuery.trim()) {
+        setSearchResults([]);
+        setIsSearching(false);
+        return;
+      }
+
+      setIsSearching(true);
+      setSearchError(null);
+
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(
+          `http://127.0.0.1:5000/search?q=${encodeURIComponent(searchQuery)}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            credentials: 'include'
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error('Search failed');
+        }
+
+        const data = await response.json();
+        setSearchResults(data.results.map((result: any) => ({
+          doc_id: result.doc_id,
+          original_filename: result.metadata.filename,
+          upload_date: result.metadata.upload_date,
+          file_type: result.metadata.file_type
+        })));
+      } catch (error) {
+        console.error('Error searching documents:', error);
+        setSearchError('Failed to search documents');
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    // Debounce the search to avoid too many requests
+    const timeoutId = setTimeout(searchDocuments, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
 
   const fetchAllFiles = async () => {
     try {
@@ -319,7 +370,7 @@ export default function Files() {
 
       <div className="container mx-auto px-4 py-8">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {files.map((file) => (
+          {(searchQuery ? searchResults : files).map((file) => (
             <div
               key={file.doc_id}
               className={`p-4 border-2 rounded-lg cursor-pointer transition-colors relative ${
