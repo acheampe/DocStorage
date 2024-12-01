@@ -4,7 +4,6 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Footer from '@/components/Footer'
 // import LockIcon from '@/components/LockIcon'
-import ImagePreview from '@/components/ImagePreview'
 
 interface User {
   user_id: number;
@@ -49,6 +48,7 @@ export default function Dashboard() {
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<{id: number, filename: string} | null>(null);
   const [imageUrls, setImageUrls] = useState<{ [key: number]: string }>({});
+  const [previewUrls, setPreviewUrls] = useState<{ [key: number]: string }>({});
 
   useEffect(() => {
     try {
@@ -182,6 +182,44 @@ export default function Dashboard() {
       Object.values(imageUrls).forEach(url => URL.revokeObjectURL(url));
     };
   }, [recentFiles]);
+
+  const fetchFullImage = async (fileId: number): Promise<string> => {
+    try {
+      const response = await fetch(`http://127.0.0.1:5000/docs/file/${fileId}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    } catch (error) {
+      console.error('Error fetching full image:', error);
+      return '/placeholder-image.png';
+    }
+  };
+
+  useEffect(() => {
+    if (previewImage) {
+      fetchFullImage(previewImage.id).then(url => {
+        setPreviewUrls(prev => ({
+          ...prev,
+          [previewImage.id]: url
+        }));
+      });
+    }
+    
+    // Cleanup function
+    return () => {
+      if (previewImage && previewUrls[previewImage.id]) {
+        URL.revokeObjectURL(previewUrls[previewImage.id]);
+      }
+    };
+  }, [previewImage]);
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -332,11 +370,45 @@ export default function Dashboard() {
       </main>
       <Footer />
       {previewImage && (
-        <ImagePreview
-          src={`http://127.0.0.1:5000/docs/file/${previewImage.id}`}
-          alt={previewImage.filename}
-          onClose={() => setPreviewImage(null)}
-        />
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={async () => {
+            if (previewUrls[previewImage.id]) {
+              URL.revokeObjectURL(previewUrls[previewImage.id]);
+            }
+            setPreviewImage(null);
+          }}
+        >
+          <div 
+            className="bg-white rounded-lg p-4 max-w-4xl max-h-[90vh] w-full mx-4 overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-2 flex-1 mr-4">
+                <h3 className="text-xl font-bold truncate">{previewImage.filename}</h3>
+              </div>
+              <button 
+                onClick={() => {
+                  if (previewUrls[previewImage.id]) {
+                    URL.revokeObjectURL(previewUrls[previewImage.id]);
+                  }
+                  setPreviewImage(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <span className="material-symbols-rounded">close</span>
+              </button>
+            </div>
+            <div className="overflow-auto max-h-[calc(90vh-8rem)]">
+              <img 
+                src={previewUrls[previewImage.id] || `/placeholder-image.png`}
+                alt={previewImage.filename}
+                className="max-w-full h-auto mx-auto"
+                loading="lazy"
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
