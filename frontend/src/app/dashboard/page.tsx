@@ -135,25 +135,24 @@ export default function Dashboard() {
     router.push('/');
   };
 
-  const fetchImageWithAuth = async (docId: number) => {
-    const token = localStorage.getItem('token');
+  const fetchThumbnail = async (fileId: number): Promise<string> => {
     try {
-      const response = await fetch(`http://127.0.0.1:5000/docs/file/${docId}`, {
+      const response = await fetch(`http://127.0.0.1:5000/docs/file/${fileId}/thumbnail`, {
         headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        credentials: 'include'
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
       });
-
+      
       if (!response.ok) {
-        throw new Error('Failed to fetch image');
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-
+      
       const blob = await response.blob();
       return URL.createObjectURL(blob);
     } catch (error) {
-      console.error('Error fetching image:', error);
-      throw error;
+      console.error('Error fetching thumbnail:', error);
+      // Return a placeholder image URL or null
+      return '/placeholder-image.png';
     }
   };
 
@@ -162,13 +161,13 @@ export default function Dashboard() {
       const newImageUrls: { [key: number]: string } = {};
       
       for (const file of recentFiles) {
-        if (file.file_type.startsWith('image/')) {
-          try {
-            const imageUrl = await fetchImageWithAuth(file.doc_id);
-            newImageUrls[file.doc_id] = imageUrl;
-          } catch (error) {
-            console.error(`Error loading image for file ${file.doc_id}:`, error);
+        try {
+          const thumbnailUrl = await fetchThumbnail(file.doc_id);
+          if (thumbnailUrl) {
+            newImageUrls[file.doc_id] = thumbnailUrl;
           }
+        } catch (error) {
+          console.error(`Error loading thumbnail for file ${file.doc_id}:`, error);
         }
       }
       
@@ -179,7 +178,6 @@ export default function Dashboard() {
       loadImages();
     }
 
-    // Cleanup function to revoke object URLs
     return () => {
       Object.values(imageUrls).forEach(url => URL.revokeObjectURL(url));
     };
