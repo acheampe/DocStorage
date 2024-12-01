@@ -51,12 +51,12 @@ export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [recentFiles, setRecentFiles] = useState<File[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [imageUrls, setImageUrls] = useState<{ [key: number]: string }>({});
   const [searchResults, setSearchResults] = useState<File[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -85,17 +85,17 @@ export default function Dashboard() {
     const uploadStatus = searchParams.get('upload');
     
     if (uploadStatus === 'success') {
-      setUploadMessage('Files uploaded successfully!');
+      setSuccessMessage('Files uploaded successfully!');
       // Clear the message after 3 seconds
       setTimeout(() => {
-        setUploadMessage(null);
+        setSuccessMessage(null);
         // Remove the query parameter
         router.replace('/dashboard');
       }, 3000);
     } else if (uploadStatus === 'partial') {
-      setUploadMessage('Some files were uploaded successfully');
+      setSuccessMessage('Some files were uploaded successfully');
       setTimeout(() => {
-        setUploadMessage(null);
+        setSuccessMessage(null);
         router.replace('/dashboard');
       }, 3000);
     }
@@ -283,6 +283,17 @@ export default function Dashboard() {
     }
   };
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const success = params.get('success');
+    if (success) {
+      setSuccessMessage(decodeURIComponent(success));
+      setTimeout(() => setSuccessMessage(null), 3000);
+      // Clean up URL
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
   return (
     <div className="min-h-screen flex flex-col bg-white">
       {/* Navigation Bar */}
@@ -309,6 +320,13 @@ export default function Dashboard() {
           </div>
         </div>
       </nav>
+
+      {successMessage && (
+        <div className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg transition-all duration-500 ease-in-out z-50 flex items-center gap-2">
+          <span className="material-symbols-rounded">check_circle</span>
+          {successMessage}
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="flex-grow container mx-auto p-8">

@@ -105,7 +105,7 @@ export default function UploadFiles() {
       if (result.errors && result.errors.length > 0) {
         router.push('/dashboard?upload=partial');
       } else {
-        router.push('/dashboard?upload=success');
+        router.push(`/dashboard?success=${encodeURIComponent('Files uploaded successfully')}`);
       }
     } catch (err: any) {
       console.error('Upload error:', err);
