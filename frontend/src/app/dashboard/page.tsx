@@ -19,6 +19,12 @@ interface File {
   file_type: string;
 }
 
+interface PreviewData {
+  type: string;
+  url: string;
+  filename: string;
+}
+
 function getFileIcon(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase();
   switch (ext) {
@@ -46,7 +52,7 @@ export default function Dashboard() {
   const [recentFiles, setRecentFiles] = useState<File[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
-  const [previewImage, setPreviewImage] = useState<{id: number, filename: string} | null>(null);
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [imageUrls, setImageUrls] = useState<{ [key: number]: string }>({});
   const [searchResults, setSearchResults] = useState<File[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -235,25 +241,45 @@ export default function Dashboard() {
   }, [searchQuery]);
 
   const handlePreview = async (file: File) => {
-    if (file.file_type.startsWith('image/')) {
+    try {
       const token = localStorage.getItem('token');
-      try {
-        const response = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          },
-          credentials: 'include'
+      const response = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        credentials: 'include'
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch file');
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+
+      // Set preview data based on file type
+      if (file.file_type.startsWith('image/')) {
+        setPreviewData({
+          type: 'image',
+          url,
+          filename: file.original_filename
         });
-        
-        if (!response.ok) throw new Error('Failed to load image');
-        
-        const blob = await response.blob();
-        const imageUrl = URL.createObjectURL(blob);
-        setImageUrls(prev => ({ ...prev, [file.doc_id]: imageUrl }));
-        setPreviewImage({ id: file.doc_id, filename: file.original_filename });
-      } catch (error) {
-        console.error('Error loading preview:', error);
+      } else if (file.file_type === 'application/pdf') {
+        setPreviewData({
+          type: 'pdf',
+          url,
+          filename: file.original_filename
+        });
+      } else {
+        // For other file types, trigger download instead
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.original_filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
       }
+    } catch (error) {
+      console.error('Error previewing file:', error);
     }
   };
 
@@ -410,32 +436,44 @@ export default function Dashboard() {
         </div>
       </main>
       <Footer />
-      {previewImage && (
+      {previewData && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-          onClick={() => setPreviewImage(null)}
+          onClick={() => {
+            URL.revokeObjectURL(previewData.url);
+            setPreviewData(null);
+          }}
         >
           <div 
             className="bg-white rounded-lg p-4 max-w-4xl max-h-[90vh] w-full mx-4 overflow-hidden"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex justify-between items-center mb-4">
-              <div className="flex items-center gap-2 flex-1 mr-4">
-                <h3 className="text-xl font-bold truncate">{previewImage.filename}</h3>
-              </div>
+              <h3 className="text-xl font-bold truncate">{previewData.filename}</h3>
               <button 
-                onClick={() => setPreviewImage(null)}
+                onClick={() => {
+                  URL.revokeObjectURL(previewData.url);
+                  setPreviewData(null);
+                }}
                 className="text-gray-500 hover:text-gray-700"
               >
                 <span className="material-symbols-rounded">close</span>
               </button>
             </div>
             <div className="overflow-auto max-h-[calc(90vh-8rem)]">
-              <img 
-                src={imageUrls[previewImage.id]}
-                alt={previewImage.filename}
-                className="max-w-full h-auto"
-              />
+              {previewData.type === 'image' ? (
+                <img 
+                  src={previewData.url} 
+                  alt={previewData.filename}
+                  className="max-w-full h-auto"
+                />
+              ) : previewData.type === 'pdf' ? (
+                <iframe
+                  src={previewData.url}
+                  className="w-full h-[80vh]"
+                  title={previewData.filename}
+                />
+              ) : null}
             </div>
           </div>
         </div>
