@@ -185,9 +185,10 @@ export default function Dashboard() {
 
   const fetchFullImage = async (fileId: number): Promise<string> => {
     try {
+      const token = localStorage.getItem('token');
       const response = await fetch(`http://127.0.0.1:5000/docs/file/${fileId}`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         }
       });
       
@@ -305,7 +306,10 @@ export default function Dashboard() {
               className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer"
               onClick={() => {
                 if (file.file_type.startsWith('image/')) {
-                  setPreviewImage({ id: file.doc_id, filename: file.original_filename });
+                  setPreviewImage({ 
+                    id: file.doc_id, 
+                    filename: file.original_filename 
+                  });
                 }
               }}
             >
@@ -372,12 +376,7 @@ export default function Dashboard() {
       {previewImage && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-          onClick={async () => {
-            if (previewUrls[previewImage.id]) {
-              URL.revokeObjectURL(previewUrls[previewImage.id]);
-            }
-            setPreviewImage(null);
-          }}
+          onClick={() => setPreviewImage(null)}
         >
           <div 
             className="bg-white rounded-lg p-4 max-w-4xl max-h-[90vh] w-full mx-4 overflow-hidden"
@@ -388,12 +387,7 @@ export default function Dashboard() {
                 <h3 className="text-xl font-bold truncate">{previewImage.filename}</h3>
               </div>
               <button 
-                onClick={() => {
-                  if (previewUrls[previewImage.id]) {
-                    URL.revokeObjectURL(previewUrls[previewImage.id]);
-                  }
-                  setPreviewImage(null);
-                }}
+                onClick={() => setPreviewImage(null)}
                 className="text-gray-500 hover:text-gray-700"
               >
                 <span className="material-symbols-rounded">close</span>
