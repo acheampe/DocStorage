@@ -48,12 +48,9 @@ export default function Dashboard() {
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<{id: number, filename: string} | null>(null);
   const [imageUrls, setImageUrls] = useState<{ [key: number]: string }>({});
-  const [previewUrls, setPreviewUrls] = useState<{ [key: number]: string }>({});
-  const [previewData, setPreviewData] = useState<{
-    type: string;
-    url: string;
-    filename: string;
-  } | null>(null);
+  const [searchResults, setSearchResults] = useState<File[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -188,106 +185,75 @@ export default function Dashboard() {
     };
   }, [recentFiles]);
 
-  const fetchFullImage = async (fileId: number): Promise<string> => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`http://127.0.0.1:5000/docs/file/${fileId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const blob = await response.blob();
-      return URL.createObjectURL(blob);
-    } catch (error) {
-      console.error('Error fetching full image:', error);
-      return '/placeholder-image.png';
-    }
-  };
-
+  // Add debounced search
   useEffect(() => {
-    if (previewImage) {
-      fetchFullImage(previewImage.id).then(url => {
-        setPreviewUrls(prev => ({
-          ...prev,
-          [previewImage.id]: url
-        }));
-      });
-    }
-    
-    // Cleanup function
-    return () => {
-      if (previewImage && previewUrls[previewImage.id]) {
-        URL.revokeObjectURL(previewUrls[previewImage.id]);
-      }
-    };
-  }, [previewImage]);
-
-  const handlePreview = async (file: File) => {
-    try {
-      const token = localStorage.getItem('token');
-      
-      // For Office documents and text files, include token in URL
-      if (
-        file.file_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || // docx
-        file.file_type === 'application/msword' || // doc
-        file.file_type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || // xlsx
-        file.file_type === 'application/vnd.ms-excel' || // xls
-        file.file_type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' || // pptx
-        file.file_type === 'application/vnd.ms-powerpoint' || // ppt
-        file.file_type === 'text/plain' // txt
-      ) {
-        // Create a blob URL with authorization
-        const response = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        
-        if (!response.ok) throw new Error('Failed to fetch file');
-        
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        
-        // Open in new tab and clean up after delay
-        window.open(url, '_blank');
-        setTimeout(() => {
-          URL.revokeObjectURL(url);
-        }, 1000);
+    const searchDocuments = async () => {
+      if (!searchQuery.trim()) {
+        setSearchResults([]);
+        setIsSearching(false);
         return;
       }
 
-      // For other file types (images, PDFs), continue with existing preview logic
-      const response = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
+      setIsSearching(true);
+      setSearchError(null);
+
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(
+          `http://127.0.0.1:5000/search?q=${encodeURIComponent(searchQuery)}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            credentials: 'include'
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error('Search failed');
         }
-      });
 
-      if (!response.ok) throw new Error('Failed to fetch file');
-
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-
-      if (file.file_type.startsWith('image/')) {
-        setPreviewData({
-          type: 'image',
-          url,
-          filename: file.original_filename
-        });
-      } else if (file.file_type === 'application/pdf') {
-        setPreviewData({
-          type: 'pdf',
-          url,
-          filename: file.original_filename
-        });
+        const data = await response.json();
+        setSearchResults(data.results.map((result: any) => ({
+          doc_id: result.doc_id,
+          original_filename: result.metadata.filename,
+          upload_date: result.metadata.upload_date,
+          file_type: result.metadata.file_type
+        })));
+      } catch (error) {
+        console.error('Error searching documents:', error);
+        setSearchError('Failed to search documents');
+      } finally {
+        setIsSearching(false);
       }
-    } catch (error) {
-      console.error('Error previewing file:', error);
+    };
+
+    // Debounce the search to avoid too many requests
+    const timeoutId = setTimeout(searchDocuments, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
+
+  const handlePreview = async (file: File) => {
+    if (file.file_type.startsWith('image/')) {
+      const token = localStorage.getItem('token');
+      try {
+        const response = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          credentials: 'include'
+        });
+        
+        if (!response.ok) throw new Error('Failed to load image');
+        
+        const blob = await response.blob();
+        const imageUrl = URL.createObjectURL(blob);
+        setImageUrls(prev => ({ ...prev, [file.doc_id]: imageUrl }));
+        setPreviewImage({ id: file.doc_id, filename: file.original_filename });
+      } catch (error) {
+        console.error('Error loading preview:', error);
+      }
     }
   };
 
@@ -347,33 +313,40 @@ export default function Dashboard() {
             className="material-symbols-rounded absolute left-4 top-1/2 -translate-y-1/2 text-navy opacity-50"
             title="Search icon"
           >
-            search
+            {isSearching ? 'hourglass_empty' : 'search'}
           </span>
         </div>
 
-        {uploadMessage && (
-          <div className="mb-6 p-4 bg-green-100 text-green-700 rounded-lg text-center transition-opacity duration-500">
-            {uploadMessage}
+        {searchError && (
+          <div className="mb-6 p-4 bg-red-100 text-red-700 rounded-lg">
+            {searchError}
           </div>
         )}
 
-        {/* Recent Files Section */}
+        {/* Files Grid */}
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-[#002B5B]">Recent Files</h2>
-          <Link
-            href="/files"
-            className="bg-[#002B5B] hover:bg-[#1B4B7D] text-white font-medium py-2 px-4 rounded"
-          >
-            View All Files
-          </Link>
+          <h2 className="text-2xl font-bold text-[#002B5B]">
+            {searchQuery ? 'Search Results' : 'Recent Files'}
+          </h2>
+          {!searchQuery && (
+            <Link
+              href="/files"
+              className="bg-[#002B5B] hover:bg-[#1B4B7D] text-white font-medium py-2 px-4 rounded"
+            >
+              View All Files
+            </Link>
+          )}
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {recentFiles.slice(0, 6).map((file) => (
+          {/* Show either search results or recent files */}
+          {(searchQuery ? searchResults : recentFiles).map((file) => (
             <div 
               key={file.doc_id} 
               className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer"
-              onClick={() => handlePreview(file)}
+              onClick={() => {
+                handlePreview(file);
+              }}
             >
               <div className="mb-2">
                 {file.file_type.startsWith('image/') ? (
@@ -415,7 +388,9 @@ export default function Dashboard() {
               </p>
             </div>
           ))}
-          {Array.from({ length: Math.max(0, 6 - recentFiles.length) }).map((_, index) => (
+          
+          {/* Only show upload placeholders for recent files view */}
+          {!searchQuery && Array.from({ length: Math.max(0, 6 - recentFiles.length) }).map((_, index) => (
             <Link
               key={`empty-${index}`}
               href="/uploadFiles"
@@ -435,13 +410,10 @@ export default function Dashboard() {
         </div>
       </main>
       <Footer />
-      {previewData && (
+      {previewImage && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-          onClick={() => {
-            URL.revokeObjectURL(previewData.url);
-            setPreviewData(null);
-          }}
+          onClick={() => setPreviewImage(null)}
         >
           <div 
             className="bg-white rounded-lg p-4 max-w-4xl max-h-[90vh] w-full mx-4 overflow-hidden"
@@ -449,32 +421,21 @@ export default function Dashboard() {
           >
             <div className="flex justify-between items-center mb-4">
               <div className="flex items-center gap-2 flex-1 mr-4">
-                <h3 className="text-xl font-bold truncate">{previewData.filename}</h3>
+                <h3 className="text-xl font-bold truncate">{previewImage.filename}</h3>
               </div>
               <button 
-                onClick={() => {
-                  URL.revokeObjectURL(previewData.url);
-                  setPreviewData(null);
-                }}
+                onClick={() => setPreviewImage(null)}
                 className="text-gray-500 hover:text-gray-700"
               >
                 <span className="material-symbols-rounded">close</span>
               </button>
             </div>
             <div className="overflow-auto max-h-[calc(90vh-8rem)]">
-              {previewData.type === 'image' ? (
-                <img 
-                  src={previewData.url} 
-                  alt={previewData.filename}
-                  className="max-w-full h-auto mx-auto"
-                />
-              ) : previewData.type === 'pdf' ? (
-                <iframe
-                  src={previewData.url}
-                  className="w-full h-[80vh]"
-                  title={previewData.filename}
-                />
-              ) : null}
+              <img 
+                src={imageUrls[previewImage.id]}
+                alt={previewImage.filename}
+                className="max-w-full h-auto"
+              />
             </div>
           </div>
         </div>
