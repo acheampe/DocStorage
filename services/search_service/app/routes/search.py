@@ -89,4 +89,25 @@ def debug_vectors():
             'vector': str(v[2])
         } for v in vectors])
     except Exception as e:
-        return jsonify({'error': str(e)}), 500 
+        return jsonify({'error': str(e)}), 500
+
+@search_bp.route('/search/delete/<int:doc_id>', methods=['DELETE'])
+def delete_document(doc_id):
+    try:
+        print(f"Search service: Attempting to delete document {doc_id}")
+        doc = DocumentIndex.query.filter_by(doc_id=doc_id).first()
+        
+        if doc:
+            db.session.delete(doc)
+            db.session.commit()
+            print(f"Search service: Successfully deleted document {doc_id}")
+            return jsonify({'message': 'Document removed from search index'})
+        else:
+            print(f"Search service: Document {doc_id} not found in index")
+            return jsonify({'message': 'Document not found in search index'}), 404
+            
+    except Exception as e:
+        print(f"Search service error: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        db.session.rollback()
+        return jsonify({'error': 'Failed to delete document from search index'}), 500 
