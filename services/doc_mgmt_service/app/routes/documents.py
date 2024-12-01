@@ -144,7 +144,7 @@ def generate_docx_thumbnail(docx_path):
             
         return None
 
-@docs_bp.route('/upload', methods=['POST', 'OPTIONS'])
+@docs_bp.route('/docs/upload', methods=['POST', 'OPTIONS'])
 def upload_document():
     if request.method == 'OPTIONS':
         return '', 200
@@ -205,9 +205,11 @@ def upload_document():
             db.session.commit()
             
             uploaded_documents.append({
-                'doc_id': document.doc_id,
+                'id': document.doc_id,
                 'filename': document.original_filename,
-                'file_type': document.file_type
+                'file_type': document.file_type,
+                'upload_date': document.upload_date.isoformat(),
+                'success': True
             })
             
         except Exception as e:
@@ -227,23 +229,26 @@ def upload_document():
         # All files failed
         return jsonify({
             'error': 'All uploads failed',
-            'errors': errors
+            'errors': errors,
+            'success': False
         }), 400
     elif errors:
         # Some files succeeded, some failed
         return jsonify({
             'message': 'Some files uploaded successfully',
-            'uploaded': uploaded_documents,
-            'errors': errors
+            'files': uploaded_documents,
+            'errors': errors,
+            'success': True
         }), 201
     else:
         # All files succeeded
         return jsonify({
             'message': 'All files uploaded successfully',
-            'uploaded': uploaded_documents
+            'files': uploaded_documents,
+            'success': True
         }), 201
 
-@docs_bp.route('/documents', methods=['GET'])
+@docs_bp.route('/docs/documents', methods=['GET'])
 def get_user_documents():
     user_id = get_user_id_from_token()
     if not user_id:
@@ -252,7 +257,7 @@ def get_user_documents():
     documents = Document.query.filter_by(user_id=user_id).all()
     return jsonify([doc.to_dict() for doc in documents]), 200
 
-@docs_bp.route('/documents/<int:doc_id>', methods=['GET'])
+@docs_bp.route('/docs/documents/<int:doc_id>', methods=['GET'])
 def download_document(doc_id):
     user_id = get_user_id_from_token()
     if not user_id:
@@ -265,7 +270,7 @@ def download_document(doc_id):
     file_path = os.path.join(UPLOAD_FOLDER, str(user_id), document.filename)
     return send_file(file_path, as_attachment=True, download_name=document.original_filename)
 
-@docs_bp.route('/documents/<int:doc_id>', methods=['DELETE'])
+@docs_bp.route('/docs/documents/<int:doc_id>', methods=['DELETE'])
 def delete_document(doc_id):
     user_id = get_user_id_from_token()
     if not user_id:
@@ -285,9 +290,11 @@ def delete_document(doc_id):
         
         return jsonify({'message': 'Document deleted successfully'}), 200
     except Exception as e:
+        print(f"Error deleting document: {str(e)}")  # Add logging
+        db.session.rollback()  # Add rollback on error
         return jsonify({'error': str(e)}), 500
 
-@docs_bp.route('/recent', methods=['GET'])
+@docs_bp.route('/docs/recent', methods=['GET'])
 def get_recent_documents():
     user_id = get_user_id_from_token()
     if not user_id:
@@ -306,60 +313,56 @@ def get_recent_documents():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@docs_bp.route('/file/<int:doc_id>', methods=['GET'])
-@cross_origin(supports_credentials=True)
-def get_file_direct(doc_id):
-    auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith('Bearer '):
-        return jsonify({'error': 'Unauthorized'}), 401
-    
+@docs_bp.route('/docs/file/<int:file_id>', methods=['GET'])
+def get_file_direct(file_id):
     try:
-        token = auth_header.split(' ')[1]
-        payload = jwt.decode(token, os.getenv('SECRET_KEY'), algorithms=['HS256'])
-        user_id = payload['user_id']
-        
-        document = Document.query.filter_by(doc_id=doc_id, user_id=user_id).first()
+        # Get user_id from token
+        user_id = get_user_id_from_token()
+        if not user_id:
+            return jsonify({'error': 'Unauthorized'}), 401
+            
+        document = Document.query.filter_by(doc_id=file_id, user_id=user_id).first()
         if not document:
             return jsonify({'error': 'File not found'}), 404
 
-        file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], str(user_id), document.filename)
+        file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], 
+                                str(user_id), 
+                                document.filename)
+        
         if not os.path.exists(file_path):
-            return jsonify({'error': 'File not found'}), 404
+            return jsonify({'error': 'File not found on disk'}), 404
 
         response = send_file(
             file_path,
             mimetype=document.file_type,
-            as_attachment=False,
+            as_attachment=True,
             download_name=document.original_filename
         )
         
-        # Remove any existing CORS headers to prevent duplication
-        response.headers.remove('Access-Control-Allow-Origin')
-        response.headers.remove('Access-Control-Allow-Credentials')
-        
-        # Add CORS headers once
-        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
-        response.headers.add('Access-Control-Allow-Credentials', 'true')
         return response
 
-    except jwt.InvalidTokenError:
-        return jsonify({'error': 'Invalid token'}), 401
     except Exception as e:
         print(f"Error serving file: {str(e)}")
         return jsonify({'error': 'Failed to serve file'}), 500
 
-@docs_bp.route('/file/<int:file_id>/thumbnail', methods=['GET'])
+@docs_bp.route('/docs/file/<int:file_id>/thumbnail', methods=['GET'])
 def get_file_thumbnail(file_id):
     try:
-        # Get the file from database
-        document = Document.query.get_or_404(file_id)
-        
-        # Get file path
-        file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], document.filename)
-        
-        # Check if file exists
-        if not os.path.exists(file_path):
+        # Get user_id from token
+        user_id = get_user_id_from_token()
+        if not user_id:
+            return jsonify({'error': 'Unauthorized'}), 401
+            
+        document = Document.query.filter_by(doc_id=file_id, user_id=user_id).first()
+        if not document:
             return jsonify({'error': 'File not found'}), 404
+
+        file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], 
+                                str(user_id), 
+                                document.filename)
+        
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'File not found on disk'}), 404
             
         # Generate thumbnail
         img = Image.open(file_path)
@@ -370,13 +373,18 @@ def get_file_thumbnail(file_id):
         img.save(img_io, 'PNG')
         img_io.seek(0)
         
-        return send_file(img_io, mimetype='image/png')
+        return send_file(
+            img_io, 
+            mimetype='image/png',
+            as_attachment=False
+        )
         
     except Exception as e:
-        current_app.logger.error(f"Error generating thumbnail: {str(e)}")
+        print(f"Error generating thumbnail: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
         return jsonify({'error': 'Error generating thumbnail'}), 500
 
-@docs_bp.route('/documents/<int:doc_id>', methods=['PATCH', 'OPTIONS'])
+@docs_bp.route('/docs/documents/<int:doc_id>', methods=['PATCH', 'OPTIONS'])
 @cross_origin(
     origins=["http://localhost:3000"],
     methods=['PATCH', 'OPTIONS'],

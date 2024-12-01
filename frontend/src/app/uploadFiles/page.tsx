@@ -101,7 +101,12 @@ export default function UploadFiles() {
       console.log('Upload response:', result);
 
       await new Promise(resolve => setTimeout(resolve, 1000));
-      router.push('/dashboard');
+      
+      if (result.errors && result.errors.length > 0) {
+        router.push('/dashboard?upload=partial');
+      } else {
+        router.push('/dashboard?upload=success');
+      }
     } catch (err: any) {
       console.error('Upload error:', err);
       setError(err.message);
