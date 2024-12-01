@@ -115,18 +115,27 @@ export default function Dashboard() {
         if (!response.ok) {
           throw new Error('Failed to fetch recent files');
         }
+
         const data = await response.json();
-        setRecentFiles(data.files.map((file: { 
-          doc_id: number; 
-          original_filename: string; 
-          upload_date: string;
-          file_type: string;
-        }) => ({
-          doc_id: file.doc_id,
-          original_filename: file.original_filename,
-          upload_date: file.upload_date,
-          file_type: file.file_type
-        })));
+        // Verify each file exists before adding to UI
+        const verifiedFiles = [];
+        for (const file of data.files) {
+          const verifyResponse = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            },
+            credentials: 'include'
+          });
+          if (verifyResponse.ok) {
+            verifiedFiles.push({
+              doc_id: file.doc_id,
+              original_filename: file.original_filename,
+              upload_date: file.upload_date,
+              file_type: file.file_type
+            });
+          }
+        }
+        setRecentFiles(verifiedFiles);
       } catch (error) {
         console.error('Error fetching recent files:', error);
       }
@@ -221,12 +230,28 @@ export default function Dashboard() {
         }
 
         const data = await response.json();
-        setSearchResults(data.results.map((result: any) => ({
-          doc_id: result.doc_id,
-          original_filename: result.metadata.filename,
-          upload_date: result.metadata.upload_date,
-          file_type: result.metadata.file_type
-        })));
+        
+        // Verify each search result exists before adding to results
+        const verifiedResults = [];
+        for (const result of data.results) {
+          const verifyResponse = await fetch(`http://127.0.0.1:5000/docs/file/${result.doc_id}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            },
+            credentials: 'include'
+          });
+          
+          if (verifyResponse.ok) {
+            verifiedResults.push({
+              doc_id: result.doc_id,
+              original_filename: result.metadata.filename,
+              upload_date: result.metadata.upload_date,
+              file_type: result.metadata.file_type
+            });
+          }
+        }
+        
+        setSearchResults(verifiedResults);
       } catch (error) {
         console.error('Error searching documents:', error);
         setSearchError('Failed to search documents');
@@ -235,7 +260,6 @@ export default function Dashboard() {
       }
     };
 
-    // Debounce the search to avoid too many requests
     const timeoutId = setTimeout(searchDocuments, 300);
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
@@ -249,6 +273,12 @@ export default function Dashboard() {
         },
         credentials: 'include'
       });
+
+      // If file doesn't exist, remove it from the UI
+      if (response.status === 404) {
+        setRecentFiles(prevFiles => prevFiles.filter(f => f.doc_id !== file.doc_id));
+        return;
+      }
 
       if (!response.ok) throw new Error('Failed to fetch file');
 

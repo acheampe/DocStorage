@@ -43,6 +43,7 @@ export default function Files() {
       if (!searchQuery.trim()) {
         setSearchResults([]);
         setIsSearching(false);
+        setSearchError(null);
         return;
       }
 
@@ -67,21 +68,35 @@ export default function Files() {
         }
 
         const data = await response.json();
-        setSearchResults(data.results.map((result: any) => ({
-          doc_id: result.doc_id,
-          original_filename: result.metadata.filename,
-          upload_date: result.metadata.upload_date,
-          file_type: result.metadata.file_type
-        })));
+        
+        // Verify each file exists before adding to UI
+        const verifiedFiles = [];
+        for (const file of data.results) {
+          const verifyResponse = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            },
+            credentials: 'include'
+          });
+          if (verifyResponse.ok) {
+            verifiedFiles.push({
+              doc_id: file.doc_id,
+              original_filename: file.metadata.filename,
+              upload_date: file.metadata.upload_date,
+              file_type: file.metadata.file_type
+            });
+          }
+        }
+        setSearchResults(verifiedFiles);
       } catch (error) {
         console.error('Error searching documents:', error);
         setSearchError('Failed to search documents');
+        setSearchResults([]);
       } finally {
         setIsSearching(false);
       }
     };
 
-    // Debounce the search to avoid too many requests
     const timeoutId = setTimeout(searchDocuments, 300);
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
@@ -369,10 +384,10 @@ export default function Files() {
       <div className="container mx-auto px-4 py-8">
         {isLoading ? (
           <div className="flex justify-center items-center h-64">
-            <span className="material-symbols-rounded text-4xl animate-spin">hourglass_empty</span>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-navy"></div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {(searchQuery ? searchResults : files).map((file) => (
               <div
                 key={file.doc_id}

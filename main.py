@@ -14,7 +14,8 @@ CORS(app, resources={
         "methods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
         "supports_credentials": True,
-        "allow_credentials": True
+        "allow_credentials": True,
+        "expose_headers": ["Content-Type", "Authorization"]
     }
 })
 
@@ -217,35 +218,47 @@ def search_service():
 
     try:
         service_url = SERVICES['search']
-        target_url = f"{service_url}/search?{request.query_string.decode()}"
+        query_string = request.query_string.decode()
+        target_url = f"{service_url}/search?{query_string}"
         
+        print(f"Gateway: Search request received with query: {query_string}")
         print(f"Gateway: Forwarding GET request to: {target_url}")
         print(f"Gateway: Headers being forwarded: {get_forwarded_headers(request)}")
         
         response = requests.get(
             target_url,
             headers=get_forwarded_headers(request),
-            timeout=5
+            timeout=10  # Increased timeout
         )
         
-        print(f"Gateway: Response status: {response.status_code}")
+        print(f"Gateway: Search response status: {response.status_code}")
+        print(f"Gateway: Search response content: {response.content.decode()[:200]}")
+        
         if response.status_code != 200:
-            print(f"Gateway: Error response: {response.text}")
-            return jsonify({'error': 'Search failed'}), response.status_code
+            error_message = f"Search failed with status {response.status_code}: {response.text}"
+            print(f"Gateway: {error_message}")
+            return jsonify({'error': error_message}), response.status_code
         
-        return Response(
-            response.content,
-            status=200,
-            headers={
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Credentials': 'true',
-                'Access-Control-Allow-Origin': 'http://localhost:3000'
-            }
-        )
+        # Parse response to ensure it's valid JSON
+        try:
+            response_data = response.json()
+            return Response(
+                response.content,
+                status=200,
+                headers={
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Credentials': 'true',
+                    'Access-Control-Allow-Origin': 'http://localhost:3000'
+                }
+            )
+        except ValueError as e:
+            print(f"Gateway: Invalid JSON in search response: {str(e)}")
+            return jsonify({'error': 'Invalid search response format'}), 500
         
     except requests.exceptions.RequestException as e:
-        print(f"Gateway error: {str(e)}")
-        return jsonify({'error': 'Search service unavailable'}), 503
+        error_message = f"Search service error: {str(e)}"
+        print(f"Gateway: {error_message}")
+        return jsonify({'error': error_message}), 503
 
 @app.route('/search/index', methods=['POST', 'OPTIONS'])
 def index_document():
@@ -275,6 +288,86 @@ def index_document():
         gateway_response.status_code = response.status_code
         
         return gateway_response
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error: {str(e)}")
+        return jsonify({'error': 'Search service unavailable'}), 503
+
+@app.route('/docs/documents/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'])
+def docs_service_with_path(path):
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,Accept')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,PATCH,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        service_url = SERVICES['docs']
+        target_url = f"{service_url}/docs/documents/{path}"
+        
+        headers = get_forwarded_headers(request)
+        headers['Accept'] = request.headers.get('Accept', 'application/json')
+        
+        response = requests.request(
+            method=request.method,
+            url=target_url,
+            headers=headers,
+            data=request.get_data(),
+            cookies=request.cookies,
+            allow_redirects=False
+        )
+        
+        # Create response with proper headers
+        gateway_response = Response(
+            response.content,
+            status=response.status_code,
+            headers={
+                'Content-Type': response.headers.get('Content-Type', 'application/json'),
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Methods': 'GET,PUT,POST,DELETE,PATCH,OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization,Accept'
+            }
+        )
+        
+        return gateway_response
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error: {str(e)}")
+        return jsonify({'error': 'Service unavailable'}), 503
+
+@app.route('/search/delete/<path:path>', methods=['DELETE', 'OPTIONS'])
+def delete_search_index(path):
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'DELETE,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        service_url = SERVICES['search']
+        target_url = f"{service_url}/search/delete/{path}"
+        
+        print(f"Gateway: Forwarding DELETE request to search service: {target_url}")
+        
+        response = requests.delete(
+            target_url,
+            headers=get_forwarded_headers(request)
+        )
+        
+        return Response(
+            response.content,
+            status=response.status_code,
+            headers={
+                'Content-Type': response.headers.get('Content-Type', 'application/json'),
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
         
     except requests.exceptions.RequestException as e:
         print(f"Gateway error: {str(e)}")
