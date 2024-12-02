@@ -10,3 +10,6 @@ class Config:
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 't')
+    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY')
+    JWT_IDENTITY_CLAIM = 'sub'
+    JWT_ACCESS_TOKEN_EXPIRES = False

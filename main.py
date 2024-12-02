@@ -4,6 +4,9 @@ import requests
 import os
 from dotenv import load_dotenv
 import traceback
+import jwt
+import base64
+import json
 
 load_dotenv()
 
@@ -27,8 +30,37 @@ SERVICES = {
 }
 
 def get_forwarded_headers(request):
-    return {key: value for key, value in request.headers.items() 
-            if key != 'Host' and key != 'Content-Length'}
+    headers = {
+        key: value for (key, value) in request.headers if key != 'Host'
+    }
+    
+    # Get the authorization header
+    auth_header = headers.get('Authorization')
+    if auth_header and auth_header.startswith('Bearer '):
+        token = auth_header.split(' ')[1]
+        
+        try:
+            # Decode the token
+            decoded = jwt.decode(token, os.getenv('JWT_SECRET_KEY'), algorithms=['HS256'])
+            
+            # Add sub claim if missing
+            if 'user_id' in decoded and 'sub' not in decoded:
+                decoded['sub'] = decoded['user_id']
+                
+                # Create new token with sub claim
+                new_token = jwt.encode(
+                    decoded,
+                    os.getenv('JWT_SECRET_KEY'),
+                    algorithm='HS256'
+                )
+                
+                # Update the Authorization header with the new token
+                headers['Authorization'] = f'Bearer {new_token}'
+                print(f"Gateway: Modified token payload: {decoded}")
+        except Exception as e:
+            print(f"Gateway: Error processing token: {str(e)}")
+    
+    return headers
 
 @app.route('/auth/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
 def auth_service(path):
@@ -384,14 +416,51 @@ def create_share():
         return response
 
     try:
+        # Get the original token
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            print("Gateway: No Authorization header found")
+            return jsonify({'error': 'No authorization token provided'}), 401
+
+        print(f"Gateway: Received Authorization header: {auth_header[:30]}...")  # Print first 30 chars
+        
+        # Extract user_id from the token
+        user_id = get_user_id_from_token(auth_header)
+        if not user_id:
+            print("Gateway: Could not extract user_id from token")
+            return jsonify({'error': 'Invalid token'}), 401
+
+        print(f"Gateway: Successfully extracted user_id: {user_id}")
+        
+        # Create a new token with sub claim for the share service
+        share_token = jwt.encode(
+            {'sub': str(user_id), 'user_id': user_id},
+            os.getenv('JWT_SECRET_KEY'),
+            algorithm='HS256'
+        )
+        
+        print(f"Gateway: Created new share token: {share_token[:30]}...")
+
         service_url = SERVICES['share']
         target_url = f"{service_url}/share"
         
+        # Log the request payload
+        request_data = request.get_json()
+        print(f"Gateway: Received share request data: {request_data}")
+        
+        # Forward the request with the modified token
+        headers = get_forwarded_headers(request)
+        headers['Authorization'] = f'Bearer {share_token}'
+        
         response = requests.post(
             target_url,
-            headers=get_forwarded_headers(request),
-            json=request.get_json()
+            headers=headers,
+            json=request_data
         )
+        
+        print(f"Gateway: Share service response: {response.status_code}")
+        if response.status_code != 200 and response.status_code != 201:
+            print(f"Gateway: Share service error response: {response.content.decode()}")
         
         return Response(
             response.content,
@@ -440,6 +509,23 @@ def revoke_share(share_id):
         print(f"Gateway error: {str(e)}")
         return jsonify({'error': 'Share service unavailable'}), 503
 
+def get_user_email(user_id):
+    try:
+        # Call the auth service to get user details
+        service_url = SERVICES['auth']
+        target_url = f"{service_url}/auth/users/{user_id}"
+        
+        response = requests.get(target_url)
+        if response.status_code == 200:
+            user_data = response.json()
+            return user_data.get('email')
+        else:
+            print(f"Gateway: Error fetching user email: {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"Gateway: Error in get_user_email: {str(e)}")
+        return None
+
 @app.route('/share/shared-with-me', methods=['GET', 'OPTIONS'])
 def get_shared_with_me():
     if request.method == 'OPTIONS':
@@ -451,13 +537,62 @@ def get_shared_with_me():
         return response
 
     try:
+        # Get user email from auth service
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'No valid authorization token provided'}), 401
+
+        # Extract token and decode it
+        token = auth_header.split(' ')[1]
+        decoded = jwt.decode(token, os.getenv('JWT_SECRET_KEY'), algorithms=['HS256'])
+        user_id = decoded.get('user_id')
+        
+        if not user_id:
+            return jsonify({'error': 'Invalid token: no user_id claim'}), 401
+            
+        # Get user email from auth service
+        auth_service_url = SERVICES['auth']
+        auth_endpoint = f"{auth_service_url}/auth/users/{user_id}"
+        print(f"Gateway: Requesting user details from: {auth_endpoint}")
+        print(f"Gateway: Using headers: {auth_header}")
+        
+        auth_response = requests.get(
+            auth_endpoint,
+            headers={'Authorization': auth_header}
+        )
+        
+        print(f"Gateway: Auth service response status: {auth_response.status_code}")
+        print(f"Gateway: Auth service response: {auth_response.text}")
+        
+        if auth_response.status_code != 200:
+            print(f"Gateway: Error fetching user details: {auth_response.status_code}")
+            return jsonify({'error': f'Could not fetch user details: {auth_response.text}'}), 500
+            
+        user_data = auth_response.json()
+        user_email = user_data.get('email')
+        
+        if not user_email:
+            return jsonify({'error': 'Could not determine user email'}), 500
+            
+        print(f"Gateway: Fetched email {user_email} for user_id {user_id}")
+        
+        # Forward request to share service
         service_url = SERVICES['share']
         target_url = f"{service_url}/share/shared-with-me"
         
+        print(f"Gateway: Forwarding to share service: {target_url}")
+        print(f"Gateway: With email parameter: {user_email}")
+        
+        # Add email to query parameters
+        headers = get_forwarded_headers(request)
         response = requests.get(
             target_url,
-            headers=get_forwarded_headers(request)
+            headers=headers,
+            params={'recipient_email': user_email}
         )
+        
+        print(f"Gateway: Share service response status: {response.status_code}")
+        print(f"Gateway: Share service response: {response.text}")
         
         return Response(
             response.content,
@@ -469,9 +604,15 @@ def get_shared_with_me():
             }
         )
         
+    except jwt.InvalidTokenError as e:
+        print(f"Gateway: Invalid token error: {str(e)}")
+        return jsonify({'error': 'Invalid token'}), 401
     except requests.exceptions.RequestException as e:
         print(f"Gateway error: {str(e)}")
-        return jsonify({'error': 'Share service unavailable'}), 503
+        return jsonify({'error': 'Service unavailable'}), 503
+    except Exception as e:
+        print(f"Gateway: Unexpected error: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/share/shared-by-me', methods=['GET', 'OPTIONS'])
 def get_shared_by_me():
@@ -484,27 +625,69 @@ def get_shared_by_me():
         return response
 
     try:
-        service_url = SERVICES['share']
-        target_url = f"{service_url}/share/shared-by-me"
-        
-        response = requests.get(
-            target_url,
-            headers=get_forwarded_headers(request)
+        # Get user ID from token
+        token_data = get_jwt_data(request.headers.get('Authorization'))
+        if not token_data or 'user_id' not in token_data:
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        # Forward request to share service with user_id
+        share_service_url = SERVICES['share']
+        share_response = requests.get(
+            f"{share_service_url}/share/shared-by-me",
+            headers=get_forwarded_headers(request),
+            params={'owner_id': token_data['user_id']}  # Add owner_id from token
         )
+
+        if share_response.status_code != 200:
+            return Response(
+                share_response.content,
+                status=share_response.status_code,
+                headers={'Content-Type': 'application/json'}
+            )
+
+        share_data = share_response.json()
         
-        return Response(
-            response.content,
-            status=response.status_code,
-            headers={
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': 'http://localhost:3000',
-                'Access-Control-Allow-Credentials': 'true'
-            }
-        )
-        
+        # Enrich with document metadata
+        docs_service_url = SERVICES['docs']
+        for share in share_data.get('shares', []):
+            try:
+                doc_response = requests.get(
+                    f"{docs_service_url}/docs/file/{share['doc_id']}",
+                    headers=get_forwarded_headers(request)
+                )
+                
+                if doc_response.status_code == 200:
+                    doc_data = doc_response.json()
+                    share.update({
+                        'filename': doc_data.get('filename'),
+                        'mime_type': doc_data.get('mime_type'),
+                        'file_size': doc_data.get('file_size'),
+                        'original_filename': doc_data.get('filename'),
+                        'file_type': doc_data.get('mime_type'),
+                        'thumbnail_url': f"/docs/file/{share['doc_id']}/thumbnail"
+                    })
+                else:
+                    print(f"Error fetching document {share['doc_id']}: {doc_response.status_code}")
+                    share.update({
+                        'filename': f"Document {share['doc_id']}",
+                        'mime_type': 'application/octet-stream',
+                        'file_size': 0,
+                        'thumbnail_url': None
+                    })
+            except Exception as e:
+                print(f"Error fetching document metadata: {str(e)}")
+                share.update({
+                    'filename': f"Document {share['doc_id']}",
+                    'mime_type': 'application/octet-stream',
+                    'file_size': 0,
+                    'thumbnail_url': None
+                })
+
+        return jsonify(share_data)
+
     except requests.exceptions.RequestException as e:
         print(f"Gateway error: {str(e)}")
-        return jsonify({'error': 'Share service unavailable'}), 503
+        return jsonify({'error': 'Service unavailable'}), 503
 
 @app.route('/share/<int:share_id>/permissions', methods=['PATCH', 'OPTIONS'])
 def update_share_permissions(share_id):
@@ -576,6 +759,68 @@ def preview_document(doc_id):
     except requests.exceptions.RequestException as e:
         print(f"Gateway error: {str(e)}")
         return jsonify({'error': 'Document service unavailable'}), 503
+
+def get_user_id_from_token(auth_header):
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return None
+        
+    token = auth_header.split(' ')[1]
+    try:
+        decoded = jwt.decode(token, os.getenv('JWT_SECRET_KEY'), algorithms=['HS256'])
+        return decoded.get('user_id')
+    except jwt.InvalidTokenError:
+        return None
+
+@app.route('/docs/file/<doc_id>', methods=['GET', 'OPTIONS'])
+def get_document(doc_id):
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        # Get user ID from token
+        user_id = get_user_id_from_token(request.headers.get('Authorization'))
+        if not user_id:
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        # Forward request to docs service
+        service_url = SERVICES['docs']
+        target_url = f"{service_url}/docs/file/{doc_id}"
+        
+        print(f"Gateway: Forwarding GET request to: {target_url}")
+        headers = get_forwarded_headers(request)
+        print(f"Gateway: Headers being forwarded: {headers}")
+        
+        response = requests.get(target_url, headers=headers)
+        print(f"Gateway: Response from docs service: {response.status_code}")
+        
+        return Response(
+            response.content,
+            status=response.status_code,
+            headers={
+                'Content-Type': response.headers.get('Content-Type', 'application/json'),
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error: {str(e)}")
+        return jsonify({'error': 'Document service unavailable'}), 503
+
+def get_jwt_data(auth_header):
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return None
+        
+    token = auth_header.split(' ')[1]
+    try:
+        return jwt.decode(token, os.getenv('JWT_SECRET_KEY'), algorithms=['HS256'])
+    except jwt.InvalidTokenError:
+        return None
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000)
