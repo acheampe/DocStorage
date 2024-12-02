@@ -60,11 +60,14 @@ export default function Dashboard() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState<number>(-1);
-  const [sharedFiles, setSharedFiles] = useState<File[]>([]);
+  // const [sharedFiles, setSharedFiles] = useState<File[]>([]);
   const [sectionsCollapsed, setSectionsCollapsed] = useState({
     recent: false,
-    shared: false
+    shared: false,
+    sharedByMe: false
   });
+  const [sharedWithMeFiles, setSharedWithMeFiles] = useState<any[]>([]);
+  const [sharedByMeFiles, setSharedByMeFiles] = useState<any[]>([]);
 
   useEffect(() => {
     try {
@@ -158,19 +161,81 @@ export default function Dashboard() {
     const fetchSharedFiles = async () => {
       try {
         const token = localStorage.getItem('token');
-        const response = await fetch('http://127.0.0.1:5000/docs/shared-with-me', {
+        if (!token) {
+            console.error('No token found in localStorage');
+            return;
+        }
+        
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            console.log('Decoded token payload:', payload);
+        } catch (e) {
+            console.error('Error decoding token:', e);
+        }
+        
+        // Fetch files shared with me
+        const withMeResponse = await fetch('http://127.0.0.1:5000/share/shared-with-me', {
           headers: {
-            'Authorization': `Bearer ${token}`
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include'
+        });
+        
+        // Fetch files shared by me
+        const byMeResponse = await fetch('http://127.0.0.1:5000/share/shared-by-me', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
           },
           credentials: 'include'
         });
 
-        if (!response.ok) {
-          throw new Error('Failed to fetch shared files');
+        if (!withMeResponse.ok || !byMeResponse.ok) {
+          console.error('Error fetching shared files');
+          return;
         }
 
-        const data = await response.json();
-        setSharedFiles(data.files || []);
+        const withMeData = await withMeResponse.json();
+        const byMeData = await byMeResponse.json();
+
+        console.log('Shared with me:', withMeData);
+        console.log('Shared by me:', byMeData);
+
+        // Verify each file exists before adding to state
+        const verifiedWithMe = [];
+        const verifiedByMe = [];
+
+        for (const share of withMeData.shares || []) {
+          try {
+            const verifyResponse = await fetch(`http://127.0.0.1:5000/docs/file/${share.doc_id}`, {
+              headers: { 'Authorization': `Bearer ${token}` },
+              credentials: 'include'
+            });
+            if (verifyResponse.ok) {
+              verifiedWithMe.push(share);
+            }
+          } catch (error) {
+            console.error(`Error verifying shared file ${share.doc_id}:`, error);
+          }
+        }
+
+        for (const share of byMeData.shares || []) {
+          try {
+            const verifyResponse = await fetch(`http://127.0.0.1:5000/docs/file/${share.doc_id}`, {
+              headers: { 'Authorization': `Bearer ${token}` },
+              credentials: 'include'
+            });
+            if (verifyResponse.ok) {
+              verifiedByMe.push(share);
+            }
+          } catch (error) {
+            console.error(`Error verifying shared file ${share.doc_id}:`, error);
+          }
+        }
+
+        setSharedWithMeFiles(verifiedWithMe);
+        setSharedByMeFiles(verifiedByMe);
       } catch (error) {
         console.error('Error fetching shared files:', error);
       }
@@ -552,16 +617,13 @@ export default function Dashboard() {
           <>
             <div className="flex justify-between items-center mb-6">
               <div className="flex items-center gap-2">
-                <h2 className="text-2xl font-bold text-[#002B5B]">
-                  Shared with Me
-                </h2>
+                <h2 className="text-2xl font-bold text-[#002B5B]">Shared with Me</h2>
                 <button 
                   onClick={() => setSectionsCollapsed(prev => ({
                     ...prev,
                     shared: !prev.shared
                   }))}
                   className="text-navy hover:text-gold transition-colors"
-                  title={sectionsCollapsed.shared ? "Expand section" : "Collapse section"}
                 >
                   <span className="material-symbols-rounded">
                     {sectionsCollapsed.shared ? 'expand_more' : 'expand_less'}
@@ -571,62 +633,89 @@ export default function Dashboard() {
             </div>
 
             {!sectionsCollapsed.shared && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {sharedFiles.map((file) => (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+                {sharedWithMeFiles.map((share) => (
                   <div 
-                    key={file.doc_id} 
+                    key={share.share_id} 
                     className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
-                    onClick={() => handlePreview(file)}
+                    onClick={() => handlePreview({ ...share, doc_id: share.doc_id })}
                   >
-                    <div className="mb-2">
-                      {file.file_type.startsWith('image/') ? (
-                        <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
-                          {imageUrls[file.doc_id] ? (
-                            <img 
-                              src={imageUrls[file.doc_id]}
-                              alt={file.original_filename}
-                              className="w-full h-40 object-cover rounded"
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.style.display = 'none';
-                                const parent = target.parentElement;
-                                if (parent) {
-                                  const icon = document.createElement('span');
-                                  icon.className = 'material-symbols-rounded text-navy text-4xl';
-                                  icon.textContent = getFileIcon(file.original_filename);
-                                  parent.appendChild(icon);
-                                }
-                              }}
-                            />
-                          ) : (
-                            <span className="material-symbols-rounded text-navy text-4xl animate-pulse">
-                              hourglass_empty
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
-                          <span className="material-symbols-rounded text-navy text-4xl">
-                            {getFileIcon(file.original_filename)}
-                          </span>
-                        </div>
-                      )}
+                    {/* File preview/icon */}
+                    <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                      <span className="material-symbols-rounded text-navy text-4xl">
+                        {getFileIcon(share.filename)}
+                      </span>
                     </div>
-                    <h4 className="font-bold text-navy truncate">{file.original_filename}</h4>
+                    <h4 className="font-bold text-navy truncate">{share.filename}</h4>
                     <div className="flex justify-between items-center mt-2">
                       <p className="text-sm text-gray-600">
-                        {new Date(file.upload_date).toLocaleDateString()}
+                        {new Date(share.created_at).toLocaleDateString()}
                       </p>
                       <span className="text-sm text-navy">
-                        Shared by: {file.shared_by}
+                        Shared by: {share.owner_id}
                       </span>
                     </div>
                   </div>
                 ))}
-
-                {sharedFiles.length === 0 && (
+                {sharedWithMeFiles.length === 0 && (
                   <div className="col-span-3 p-8 text-center text-gray-500">
                     No files have been shared with you yet.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Shared by Me Section */}
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-2">
+                <h2 className="text-2xl font-bold text-[#002B5B]">Shared by Me</h2>
+                <button 
+                  onClick={() => setSectionsCollapsed(prev => ({
+                    ...prev,
+                    sharedByMe: !prev.sharedByMe
+                  }))}
+                  className="text-navy hover:text-gold transition-colors"
+                >
+                  <span className="material-symbols-rounded">
+                    {sectionsCollapsed.sharedByMe ? 'expand_more' : 'expand_less'}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {!sectionsCollapsed.sharedByMe && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {sharedByMeFiles.map((share) => (
+                  <div 
+                    key={share.share_id} 
+                    className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
+                    onClick={() => handlePreview({
+                      doc_id: share.doc_id,
+                      file_type: share.mime_type,
+                      original_filename: share.filename,
+                      ...share
+                    })}
+                  >
+                    {/* File preview/icon */}
+                    <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                      <span className="material-symbols-rounded text-navy text-4xl">
+                        {getFileIcon(share.filename)}
+                      </span>
+                    </div>
+                    <h4 className="font-bold text-navy truncate">{share.filename}</h4>
+                    <div className="flex justify-between items-center mt-2">
+                      <p className="text-sm text-gray-600">
+                        {new Date(share.created_at).toLocaleDateString()}
+                      </p>
+                      <span className="text-sm text-navy">
+                        Shared with: {share.recipient_email}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                {sharedByMeFiles.length === 0 && (
+                  <div className="col-span-3 p-8 text-center text-gray-500">
+                    You haven't shared any files yet.
                   </div>
                 )}
               </div>

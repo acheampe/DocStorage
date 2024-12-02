@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import ShareModal from '@/components/ShareModal';
+import { getFileIcon } from '@/utils/fileIcons';
 
 interface File {
   doc_id: number;
@@ -29,6 +30,7 @@ export default function Files() {
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState<number>(-1);
+  const [imageUrls, setImageUrls] = useState<{ [key: number]: string }>({});
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -306,6 +308,56 @@ export default function Files() {
     }
   };
 
+  const fetchThumbnail = async (fileId: number): Promise<string> => {
+    try {
+      const response = await fetch(`http://127.0.0.1:5000/docs/file/${fileId}/thumbnail`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    } catch (error) {
+      console.error('Error fetching thumbnail:', error);
+      return '/placeholder-image.png';
+    }
+  };
+
+  useEffect(() => {
+    const loadImages = async () => {
+      const newImageUrls: { [key: number]: string } = {};
+      
+      for (const file of files) {
+        if (file.file_type.startsWith('image/')) {
+          try {
+            const thumbnailUrl = await fetchThumbnail(file.doc_id);
+            if (thumbnailUrl) {
+              newImageUrls[file.doc_id] = thumbnailUrl;
+            }
+          } catch (error) {
+            console.error(`Error loading thumbnail for file ${file.doc_id}:`, error);
+          }
+        }
+      }
+      
+      setImageUrls(newImageUrls);
+    };
+
+    if (files.length > 0) {
+      loadImages();
+    }
+
+    return () => {
+      // Cleanup URLs on unmount
+      Object.values(imageUrls).forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [files]);
+
   return (
     <div className="min-h-screen flex flex-col">
       <Navigation />
@@ -433,15 +485,46 @@ export default function Files() {
                     </button>
                   </div>
                 </div>
+
+                <div className="mb-2">
+                  {file.file_type.startsWith('image/') ? (
+                    <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
+                      {imageUrls[file.doc_id] ? (
+                        <img 
+                          src={imageUrls[file.doc_id]}
+                          alt={file.original_filename}
+                          className="w-full h-40 object-cover rounded"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            const parent = target.parentElement;
+                            if (parent) {
+                              const icon = document.createElement('span');
+                              icon.className = 'material-symbols-rounded text-navy text-4xl';
+                              icon.textContent = getFileIcon(file.original_filename);
+                              parent.appendChild(icon);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <span className="material-symbols-rounded text-navy text-4xl animate-pulse">
+                          hourglass_empty
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                      <span className="material-symbols-rounded text-navy text-4xl">
+                        {getFileIcon(file.original_filename)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
                 <p className="font-medium text-navy truncate">{file.original_filename}</p>
                 <p className="text-sm text-gray-500">
                   {new Date(file.upload_date).toLocaleDateString()}
                 </p>
-                <span className="material-symbols-rounded absolute right-2 bottom-2 text-gray-400">
-                  {file.file_type.startsWith('image/') ? 'image' :
-                   file.file_type === 'application/pdf' ? 'picture_as_pdf' :
-                   'description'}
-                </span>
               </div>
             ))}
           </div>

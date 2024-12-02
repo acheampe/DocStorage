@@ -5,6 +5,7 @@ interface ShareModalProps {
   onClose: () => void;
   onShare?: (email: string, permissions: SharePermissions) => Promise<void>;
   isBulkShare?: boolean;
+  selectedFiles?: number[];
   selectedCount?: number;
   className?: string;
   infoMessage?: React.ReactNode;
@@ -16,7 +17,7 @@ interface SharePermissions {
   can_reshare: boolean;
 }
 
-export default function ShareModal({ docId, onClose, onShare, isBulkShare, selectedCount, className, infoMessage }: ShareModalProps) {
+export default function ShareModal({ docId, onClose, onShare, isBulkShare, selectedFiles, selectedCount, className, infoMessage }: ShareModalProps) {
   const [email, setEmail] = useState('');
   const [permissions, setPermissions] = useState<SharePermissions>({
     can_view: true,
@@ -25,17 +26,54 @@ export default function ShareModal({ docId, onClose, onShare, isBulkShare, selec
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
     setError(null);
-    
+    setIsLoading(true);
+
     try {
-      await onShare(email, permissions);
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to share document');
+      const token = localStorage.getItem('token');
+      
+      console.log('JWT Token:', token);
+
+      const body = isBulkShare
+        ? { doc_ids: selectedFiles, recipient_email: email, permissions }
+        : { doc_id: docId, recipient_email: email, permissions };
+
+      console.log('Share request payload:', body);
+
+      const response = await fetch('http://127.0.0.1:5000/share', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify(body)
+      });
+
+      const contentType = response.headers.get('content-type');
+      if (!response.ok) {
+        if (contentType && contentType.includes('application/json')) {
+          const data = await response.json();
+          throw new Error(data.error || 'Failed to share file');
+        } else {
+          const text = await response.text();
+          console.error('Server response:', text);
+          throw new Error('Server error occurred');
+        }
+      }
+
+      const data = await response.json();
+      setSuccessMessage('File shared successfully!');
+      setTimeout(() => {
+        onClose();
+      }, 2000);
+    } catch (error) {
+      console.error('Share error:', error);
+      setError(error instanceof Error ? error.message : 'Failed to share file');
     } finally {
       setIsLoading(false);
     }
@@ -120,6 +158,12 @@ export default function ShareModal({ docId, onClose, onShare, isBulkShare, selec
           {error && (
             <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
               {error}
+            </div>
+          )}
+
+          {successMessage && (
+            <div className="mb-4 p-3 bg-green-50 text-green-700 rounded-lg text-sm">
+              {successMessage}
             </div>
           )}
 

@@ -136,3 +136,26 @@ def update_profile(current_user_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
+
+@auth_bp.route('/users/<int:user_id>', methods=['GET'])
+@jwt_required()
+def get_user(current_user_id, user_id):
+    try:
+        # Optionally verify that the requesting user has permission to view this user
+        if current_user_id != user_id:
+            return jsonify({'error': 'Unauthorized to view this user'}), 403
+            
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+            
+        return jsonify({
+            'user_id': user.user_id,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name
+        }), 200
+        
+    except Exception as e:
+        print(f"Error fetching user: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
