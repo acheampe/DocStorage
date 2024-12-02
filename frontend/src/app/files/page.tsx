@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
+import ShareModal from '@/components/ShareModal';
 
 interface File {
   doc_id: number;
@@ -27,6 +28,7 @@ export default function Files() {
   const [searchResults, setSearchResults] = useState<File[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [shareModalOpen, setShareModalOpen] = useState<number>(-1);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -369,7 +371,7 @@ export default function Files() {
                   Download Selected
                 </button>
                 <button
-                  onClick={() => {/* Share functionality to be implemented */}}
+                  onClick={() => setShareModalOpen(selectedFiles[0])}
                   className="px-6 py-2 bg-gold text-white rounded-lg hover:bg-opacity-90 transition-all"
                   title="Share selected files"
                 >
@@ -405,19 +407,31 @@ export default function Files() {
                     onChange={() => handleFileSelect(file.doc_id)}
                     className="h-5 w-5"
                   />
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditingFile({ 
-                        id: file.doc_id, 
-                        name: file.original_filename 
-                      });
-                    }}
-                    className="text-navy hover:text-gold"
-                    title="Rename file"
-                  >
-                    <span className="material-symbols-rounded">edit</span>
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShareModalOpen(file.doc_id);
+                      }}
+                      className="text-navy hover:text-gold"
+                      title="Share file"
+                    >
+                      <span className="material-symbols-rounded">share</span>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingFile({ 
+                          id: file.doc_id, 
+                          name: file.original_filename 
+                        });
+                      }}
+                      className="text-navy hover:text-gold"
+                      title="Rename file"
+                    >
+                      <span className="material-symbols-rounded">edit</span>
+                    </button>
+                  </div>
                 </div>
                 <p className="font-medium text-navy truncate">{file.original_filename}</p>
                 <p className="text-sm text-gray-500">
@@ -449,21 +463,35 @@ export default function Files() {
             <div className="flex justify-between items-center mb-4">
               <div className="flex items-center gap-2 flex-1 mr-4">
                 <h3 className="text-xl font-bold truncate">{previewData.filename}</h3>
-                <button
-                  onClick={() => {
-                    const file = files.find(f => f.original_filename === previewData.filename);
-                    if (file) {
-                      setEditingFile({
-                        id: file.doc_id,
-                        name: file.original_filename
-                      });
-                    }
-                  }}
-                  className="text-navy hover:text-gold"
-                  title="Rename file"
-                >
-                  <span className="material-symbols-rounded">edit</span>
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      const file = files.find(f => f.original_filename === previewData.filename);
+                      if (file) {
+                        setShareModalOpen(file.doc_id);
+                      }
+                    }}
+                    className="text-navy hover:text-gold"
+                    title="Share file"
+                  >
+                    <span className="material-symbols-rounded">share</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      const file = files.find(f => f.original_filename === previewData.filename);
+                      if (file) {
+                        setEditingFile({
+                          id: file.doc_id,
+                          name: file.original_filename
+                        });
+                      }
+                    }}
+                    className="text-navy hover:text-gold"
+                    title="Rename file"
+                  >
+                    <span className="material-symbols-rounded">edit</span>
+                  </button>
+                </div>
               </div>
               <button 
                 onClick={() => {
@@ -527,6 +555,16 @@ export default function Files() {
         <div className="mb-6 p-4 bg-red-100 text-red-700 rounded-lg">
           {searchError}
         </div>
+      )}
+
+      {shareModalOpen !== -1 && (
+        <ShareModal
+          docId={shareModalOpen}
+          onClose={() => setShareModalOpen(-1)}
+          className="z-50"
+          isBulkShare={selectedFiles.length > 1}
+          selectedCount={selectedFiles.length}
+        />
       )}
     </div>
   );

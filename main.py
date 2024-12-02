@@ -20,10 +20,10 @@ CORS(app, resources={
 })
 
 SERVICES = {
-    'auth': 'http://127.0.0.1:3001',
-    'docs': 'http://127.0.0.1:3002',
-    'search': 'http://127.0.0.1:3003',
-    'share': 'http://127.0.0.1:3004'
+    'auth': 'http://localhost:3001',
+    'docs': 'http://localhost:3002',
+    'search': 'http://localhost:3003',
+    'share': 'http://localhost:3004'
 }
 
 def get_forwarded_headers(request):
@@ -372,6 +372,210 @@ def delete_search_index(path):
     except requests.exceptions.RequestException as e:
         print(f"Gateway error: {str(e)}")
         return jsonify({'error': 'Search service unavailable'}), 503
+
+@app.route('/share', methods=['POST', 'OPTIONS'])
+def create_share():
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'POST,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        service_url = SERVICES['share']
+        target_url = f"{service_url}/share"
+        
+        response = requests.post(
+            target_url,
+            headers=get_forwarded_headers(request),
+            json=request.get_json()
+        )
+        
+        return Response(
+            response.content,
+            status=response.status_code,
+            headers={
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error: {str(e)}")
+        return jsonify({'error': 'Share service unavailable'}), 503
+
+@app.route('/share/<int:share_id>', methods=['DELETE', 'OPTIONS'])
+def revoke_share(share_id):
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'DELETE,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        service_url = SERVICES['share']
+        target_url = f"{service_url}/share/{share_id}"
+        
+        response = requests.delete(
+            target_url,
+            headers=get_forwarded_headers(request)
+        )
+        
+        return Response(
+            response.content,
+            status=response.status_code,
+            headers={
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error: {str(e)}")
+        return jsonify({'error': 'Share service unavailable'}), 503
+
+@app.route('/share/shared-with-me', methods=['GET', 'OPTIONS'])
+def get_shared_with_me():
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        service_url = SERVICES['share']
+        target_url = f"{service_url}/share/shared-with-me"
+        
+        response = requests.get(
+            target_url,
+            headers=get_forwarded_headers(request)
+        )
+        
+        return Response(
+            response.content,
+            status=response.status_code,
+            headers={
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error: {str(e)}")
+        return jsonify({'error': 'Share service unavailable'}), 503
+
+@app.route('/share/shared-by-me', methods=['GET', 'OPTIONS'])
+def get_shared_by_me():
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        service_url = SERVICES['share']
+        target_url = f"{service_url}/share/shared-by-me"
+        
+        response = requests.get(
+            target_url,
+            headers=get_forwarded_headers(request)
+        )
+        
+        return Response(
+            response.content,
+            status=response.status_code,
+            headers={
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error: {str(e)}")
+        return jsonify({'error': 'Share service unavailable'}), 503
+
+@app.route('/share/<int:share_id>/permissions', methods=['PATCH', 'OPTIONS'])
+def update_share_permissions(share_id):
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'PATCH,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        service_url = SERVICES['share']
+        target_url = f"{service_url}/share/{share_id}/permissions"
+        
+        response = requests.patch(
+            target_url,
+            headers=get_forwarded_headers(request),
+            json=request.get_json()
+        )
+        
+        return Response(
+            response.content,
+            status=response.status_code,
+            headers={
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error: {str(e)}")
+        return jsonify({'error': 'Share service unavailable'}), 503
+
+# Add new route for document previews
+@app.route('/docs/preview/<int:doc_id>', methods=['GET', 'OPTIONS'])
+def preview_document(doc_id):
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        service_url = SERVICES['docs']
+        target_url = f"{service_url}/docs/preview/{doc_id}"
+        
+        print(f"Gateway: Forwarding preview request to docs service: {target_url}")
+        
+        response = requests.get(
+            target_url,
+            headers=get_forwarded_headers(request),
+            stream=True  # Important for handling file downloads
+        )
+        
+        return Response(
+            response.content,
+            status=response.status_code,
+            headers={
+                'Content-Type': response.headers.get('Content-Type', 'application/octet-stream'),
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error: {str(e)}")
+        return jsonify({'error': 'Document service unavailable'}), 503
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000)
