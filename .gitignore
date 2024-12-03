@@ -19,3 +19,6 @@ todotxt.txt
 
 #ignore DocStorage
 DocStorageDocuments/
+
+#ignore login_databases.sh
+login_databases.sh  
