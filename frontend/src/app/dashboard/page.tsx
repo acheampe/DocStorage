@@ -27,6 +27,17 @@ interface PreviewData {
   docId: number;
 }
 
+interface SharedFile {
+  share_id: number;
+  doc_id: number;
+  filename: string;
+  shared_date: string;
+  shared_with: string;  // email of recipient
+  mime_type: string;
+  file_size: number;
+  thumbnail_url?: string;
+}
+
 function getFileIcon(filename: string | undefined): string {
   if (!filename) return 'document'; // Default icon if no filename
   
@@ -72,7 +83,7 @@ export default function Dashboard() {
     sharedByMe: false
   });
   const [sharedWithMeFiles, setSharedWithMeFiles] = useState<any[]>([]);
-  const [sharedByMeFiles, setSharedByMeFiles] = useState<any[]>([]);
+  const [sharedByMeFiles, setSharedByMeFiles] = useState<SharedFile[]>([]);
 
   useEffect(() => {
     try {
@@ -703,10 +714,10 @@ export default function Dashboard() {
                     <h4 className="font-bold text-navy truncate">{share.filename}</h4>
                     <div className="flex justify-between items-center mt-2">
                       <p className="text-sm text-gray-600">
-                        {new Date(share.created_at).toLocaleDateString()}
+                        {share.shared_date ? new Date(share.shared_date).toLocaleDateString() : 'N/A'}
                       </p>
                       <span className="text-sm text-navy">
-                        Shared with: {share.recipient_email}
+                        Shared with: {share.shared_with || 'Unknown'}
                       </span>
                     </div>
                   </div>

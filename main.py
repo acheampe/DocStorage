@@ -605,74 +605,73 @@ def get_shared_by_me():
         if not token_data or 'user_id' not in token_data:
             return jsonify({'error': 'Unauthorized'}), 401
 
-        # Forward request to share service with user_id
+        # Forward request to share service
         share_service_url = SERVICES['share']
         share_response = requests.get(
             f"{share_service_url}/share/shared-by-me",
             headers=get_forwarded_headers(request),
-            params={'owner_id': token_data['user_id']}  # Add owner_id from token
+            params={'owner_id': token_data['user_id']}
         )
 
-        if share_response.status_code != 200:
-            return Response(
-                share_response.content,
-                status=share_response.status_code,
-                headers={'Content-Type': 'application/json'}
-            )
-
-        share_data = share_response.json()
-        
-        # Get auth service for user lookups
-        auth_service_url = SERVICES['auth']
-        
-        # Enrich with document metadata and format dates
-        docs_service_url = SERVICES['docs']
-        for share in share_data.get('shares', []):
-            try:
-                # Get recipient info
-                recipient_response = requests.get(
-                    f"{auth_service_url}/auth/users/{share['recipient_id']}",
-                    headers=get_forwarded_headers(request)
-                )
-                
-                if recipient_response.status_code == 200:
-                    recipient_data = recipient_response.json()
-                    share['shared_with'] = recipient_data.get('email')
-                
-                # Format the date
-                if share.get('shared_date'):
-                    # Convert to datetime and format
-                    shared_date = datetime.fromisoformat(share['shared_date'].replace('Z', '+00:00'))
-                    share['shared_date'] = shared_date.strftime('%Y-%m-%d %H:%M:%S')
-                
-                # Get document metadata
-                doc_response = requests.get(
-                    f"{docs_service_url}/docs/file/{share['doc_id']}",
-                    headers=get_forwarded_headers(request)
-                )
-                
-                if doc_response.status_code == 200:
-                    doc_data = doc_response.json()
-                    share.update({
-                        'filename': doc_data.get('filename'),
-                        'mime_type': doc_data.get('mime_type'),
-                        'file_size': doc_data.get('file_size'),
-                        'original_filename': doc_data.get('filename'),
-                        'file_type': doc_data.get('mime_type'),
-                        'thumbnail_url': f"/docs/file/{share['doc_id']}/thumbnail"
-                    })
-                else:
-                    print(f"Error fetching document {share['doc_id']}: {doc_response.status_code}")
-                    share.update({
-                        'filename': f"Document {share['doc_id']}",
-                        'mime_type': 'application/octet-stream',
-                        'file_size': 0,
-                        'thumbnail_url': None
-                    })
-            except Exception as e:
-                print(f"Error enriching share data: {str(e)}")
-                
-        return jsonify(share_data)
+        if share_response.status_code == 200:
+            share_data = share_response.json()
+            
+            # Get auth service for user lookups
+            auth_service_url = SERVICES['auth']
+            
+            # Enrich with document metadata and recipient info
+            docs_service_url = SERVICES['docs']
+            for share in share_data.get('shares', []):
+                try:
+                    # Get recipient info using auth service's user lookup endpoint
+                    recipient_response = requests.post(
+                        f"{auth_service_url}/auth/user/by-id",
+                        headers=get_forwarded_headers(request),
+                        json={'user_id': share['recipient_id']}
+                    )
+                    
+                    if recipient_response.status_code == 200:
+                        recipient_data = recipient_response.json()
+                        share['shared_with'] = recipient_data.get('email')
+                    else:
+                        print(f"Error fetching recipient data: {recipient_response.status_code}")
+                        share['shared_with'] = 'Unknown'
+                    
+                    # Format the date
+                    if share.get('shared_date'):
+                        shared_date = datetime.fromisoformat(share['shared_date'].replace('Z', '+00:00'))
+                        share['shared_date'] = shared_date.strftime('%Y-%m-%d')
+                    
+                    # Get document metadata
+                    doc_response = requests.get(
+                        f"{docs_service_url}/docs/file/{share['doc_id']}",
+                        headers=get_forwarded_headers(request)
+                    )
+                    
+                    if doc_response.status_code == 200:
+                        doc_data = doc_response.json()
+                        share.update({
+                            'filename': doc_data.get('filename'),
+                            'mime_type': doc_data.get('mime_type'),
+                            'file_size': doc_data.get('file_size'),
+                            'thumbnail_url': f"/docs/file/{share['doc_id']}/thumbnail"
+                        })
+                        
+                except Exception as e:
+                    print(f"Error enriching share data: {str(e)}")
+                    continue
+                    
+            return jsonify(share_data)
+            
+        return Response(
+            share_response.content,
+            status=share_response.status_code,
+            headers={
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
         
     except requests.exceptions.RequestException as e:
         print(f"Gateway error: {str(e)}")

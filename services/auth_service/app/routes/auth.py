@@ -198,3 +198,23 @@ def get_user_id_from_email():
     except Exception as e:
         print(f"Error in get_user_id_from_email: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
+
+@auth_bp.route('/user/by-id', methods=['POST'])
+def get_user_by_id():
+    try:
+        data = request.get_json()
+        if not data or 'user_id' not in data:
+            return jsonify({'error': 'User ID is required'}), 400
+            
+        user = User.query.get(data['user_id'])
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+            
+        return jsonify({
+            'user_id': user.user_id,
+            'email': user.email
+        }), 200
+        
+    except Exception as e:
+        print(f"Error in get_user_by_id: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
