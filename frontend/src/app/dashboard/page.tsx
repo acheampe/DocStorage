@@ -704,36 +704,41 @@ export default function Dashboard() {
 
             {!sectionsCollapsed.sharedByMe && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {sharedByMeFiles.map((share) => (
-                  <div 
-                    key={share.share_id} 
-                    className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
-                    onClick={() => handlePreview(share.doc_id)}
-                  >
-                    {/* File preview/icon */}
-                    <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
-                      <span className="material-symbols-rounded text-navy text-4xl">
-                        {getFileIcon(share.filename)}
-                      </span>
-                    </div>
-                    
-                    {/* File name and metadata container */}
-                    <div className="flex justify-between items-start">
-                      {/* File name */}
-                      <h4 className="font-bold text-navy truncate max-w-[60%]">{share.filename}</h4>
-                      
-                      {/* Share info container - stacked on right */}
-                      <div className="flex flex-col items-end text-sm">
-                        <span className="text-navy mb-1">
-                          Shared with: {share.shared_with || 'Unknown'}
+                {sharedByMeFiles.map((share) => {
+                  // Find the matching file object from recentFiles
+                  const file = recentFiles.find(f => f.doc_id === share.doc_id);
+                  const filename = file?.original_filename || share.filename || `Document ${share.doc_id}`;
+
+                  return (
+                    <div 
+                      key={share.share_id} 
+                      className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
+                      onClick={() => handlePreview(share.doc_id)}
+                    >
+                      {/* File preview/icon */}
+                      <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                        <span className="material-symbols-rounded text-navy text-4xl">
+                          {getFileIcon(filename)}
                         </span>
-                        <span className="text-gray-600">
-                          {share.shared_date ? new Date(share.shared_date).toLocaleDateString() : 'N/A'}
+                      </div>
+
+                      {/* File name */}
+                      <h4 className="font-bold text-navy truncate mb-2">
+                        {filename}
+                      </h4>
+                      
+                      {/* Share details */}
+                      <div className="flex justify-between items-center mt-2">
+                        <p className="text-sm text-gray-600">
+                          {new Date(share.shared_date).toLocaleDateString()}
+                        </p>
+                        <span className="text-sm text-navy">
+                          Shared with: {share.shared_with}
                         </span>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {sharedByMeFiles.length === 0 && (
                   <div className="col-span-3 p-8 text-center text-gray-500">
                     You haven't shared any files yet.
