@@ -27,24 +27,29 @@ interface PreviewData {
   docId: number;
 }
 
-function getFileIcon(filename: string): string {
+function getFileIcon(filename: string | undefined): string {
+  if (!filename) return 'document'; // Default icon if no filename
+  
   const ext = filename.split('.').pop()?.toLowerCase();
+  
   switch (ext) {
-    case 'pdf':
-      return 'picture_as_pdf';
-    case 'doc':
-    case 'docx':
-      return 'description';
-    case 'ppt':
-    case 'pptx':
-      return 'slideshow';
-    case 'jpg':
-    case 'jpeg':
-    case 'png':
-    case 'gif':
-      return 'image';
-    default:
-      return 'article';
+      case 'pdf':
+          return 'picture_as_pdf';
+      case 'doc':
+      case 'docx':
+          return 'description';
+      case 'xls':
+      case 'xlsx':
+          return 'table_chart';
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+          return 'image';
+      case 'txt':
+          return 'article';
+      default:
+          return 'document';
   }
 }
 
@@ -364,52 +369,51 @@ export default function Dashboard() {
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
 
-  const handlePreview = async (file: File, isShareClick: boolean = false) => {
+  const handlePreview = async (docId: number) => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
+      if (!token) {
+        console.error('No token found');
+        return;
+      }
+
+      const response = await fetch(`http://127.0.0.1:5000/docs/preview/${docId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         },
         credentials: 'include'
       });
 
-      if (response.status === 404) {
-        setRecentFiles(prevFiles => prevFiles.filter(f => f.doc_id !== file.doc_id));
-        return;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      if (!response.ok) throw new Error('Failed to fetch file');
+      const contentType = response.headers.get('Content-Type') || '';
+      const data = await response.blob();
 
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-
-      // Set preview data based on file type
-      if (file.file_type.startsWith('image/')) {
+      // Create preview data based on content type
+      if (contentType.startsWith('image/')) {
         setPreviewData({
           type: 'image',
-          url,
-          filename: file.original_filename,
-          docId: file.doc_id
+          url: URL.createObjectURL(data),
+          filename: `Document ${docId}`,
+          docId: docId
         });
-      } else if (file.file_type === 'application/pdf') {
+      } else if (contentType === 'application/pdf') {
         setPreviewData({
           type: 'pdf',
-          url,
-          filename: file.original_filename,
-          docId: file.doc_id
+          url: URL.createObjectURL(data),
+          filename: `Document ${docId}`,
+          docId: docId
         });
-      } else if (!isShareClick) { // Only trigger download if it's not a share click
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = file.original_filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+      } else {
+        // For other file types, may need to download instead
+        console.log('Unsupported preview type:', contentType);
+        setPreviewData(null);
       }
     } catch (error) {
       console.error('Error previewing file:', error);
+      setPreviewData(null);
     }
   };
 
@@ -535,7 +539,7 @@ export default function Dashboard() {
               <div 
                 key={file.doc_id} 
                 className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
-                onClick={() => handlePreview(file)}
+                onClick={() => handlePreview(file.doc_id)}
               >
                 <div className="mb-2">
                   {file.file_type.startsWith('image/') ? (
@@ -637,7 +641,7 @@ export default function Dashboard() {
                   <div 
                     key={share.share_id} 
                     className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
-                    onClick={() => handlePreview({ ...share, doc_id: share.doc_id })}
+                    onClick={() => handlePreview(share.doc_id)}
                   >
                     {/* File preview/icon */}
                     <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
@@ -688,12 +692,7 @@ export default function Dashboard() {
                   <div 
                     key={share.share_id} 
                     className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
-                    onClick={() => handlePreview({
-                      doc_id: share.doc_id,
-                      file_type: share.mime_type,
-                      original_filename: share.filename,
-                      ...share
-                    })}
+                    onClick={() => handlePreview(share.doc_id)}
                   >
                     {/* File preview/icon */}
                     <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
