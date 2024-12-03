@@ -530,9 +530,8 @@ def get_recent_files():
 
 @docs_bp.route('/docs/file/<int:file_id>', methods=['GET'])
 @docs_bp.route('/docs/file/<int:file_id>/thumbnail', methods=['GET'])
-def get_file(file_id):
+def get_file_content(file_id):
     try:
-        # Query using doc_id instead of id
         document = Document.query.filter_by(doc_id=file_id).first()
         
         if not document:
@@ -622,4 +621,17 @@ def get_all_documents():
     except Exception as e:
         print(f"Error in get_all_documents: {str(e)}")
         print("Traceback:", traceback.format_exc())
+        return jsonify({'error': 'Internal server error'}), 500
+
+@docs_bp.route('/docs/file/<int:doc_id>', methods=['GET'])
+def get_file_metadata(doc_id):
+    try:
+        document = Document.query.filter_by(doc_id=doc_id).first()
+        if not document:
+            return jsonify({'error': 'Document not found'}), 404
+            
+        return jsonify(document.to_dict())
+        
+    except Exception as e:
+        print(f"Error retrieving document: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500

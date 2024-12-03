@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, make_response, Response
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 import requests
 import os
 from dotenv import load_dotenv
@@ -13,11 +13,10 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app, resources={
     r"/*": {
-        "origins": "http://localhost:3000",
-        "methods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+        "origins": ["http://localhost:3000"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
         "supports_credentials": True,
-        "allow_credentials": True,
         "expose_headers": ["Content-Type", "Authorization"]
     }
 })
@@ -405,6 +404,28 @@ def delete_search_index(path):
         print(f"Gateway error: {str(e)}")
         return jsonify({'error': 'Search service unavailable'}), 503
 
+def get_user_id_from_email(email):
+    try:
+        # Forward request to auth service to get user ID from email
+        auth_url = f"{SERVICES['auth']}/auth/user/by-email"
+        response = requests.post(
+            auth_url,
+            headers={'Content-Type': 'application/json'},
+            json={'email': email}
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            return data.get('user_id')
+        else:
+            print(f"Error getting user ID from email: {response.status_code}")
+            print(f"Response: {response.text}")
+            return None
+            
+    except Exception as e:
+        print(f"Error in get_user_id_from_email: {str(e)}")
+        return None
+
 @app.route('/share', methods=['POST', 'OPTIONS'])
 def create_share():
     if request.method == 'OPTIONS':
@@ -416,55 +437,37 @@ def create_share():
         return response
 
     try:
-        # Get the original token
-        auth_header = request.headers.get('Authorization')
-        if not auth_header:
-            print("Gateway: No Authorization header found")
-            return jsonify({'error': 'No authorization token provided'}), 401
+        # Get request data
+        data = request.get_json()
+        print(f"Gateway: Received share request data: {data}")
+        
+        # Get recipient's user ID from email
+        recipient_email = data.get('recipient_email')
+        recipient_id = get_user_id_from_email(recipient_email)
+        
+        if not recipient_id:
+            return jsonify({
+                'error': 'Recipient not found. They must have a DocStorage account.'
+            }), 404
 
-        print(f"Gateway: Received Authorization header: {auth_header[:30]}...")  # Print first 30 chars
-        
-        # Extract user_id from the token
-        user_id = get_user_id_from_token(auth_header)
-        if not user_id:
-            print("Gateway: Could not extract user_id from token")
-            return jsonify({'error': 'Invalid token'}), 401
-
-        print(f"Gateway: Successfully extracted user_id: {user_id}")
-        
-        # Create a new token with sub claim for the share service
-        share_token = jwt.encode(
-            {'sub': str(user_id), 'user_id': user_id},
-            os.getenv('JWT_SECRET_KEY'),
-            algorithm='HS256'
-        )
-        
-        print(f"Gateway: Created new share token: {share_token[:30]}...")
-
-        service_url = SERVICES['share']
-        target_url = f"{service_url}/share"
-        
-        # Log the request payload
-        request_data = request.get_json()
-        print(f"Gateway: Received share request data: {request_data}")
-        
-        # Forward the request with the modified token
+        # Forward the share request to the share service
+        share_url = f"{SERVICES['share']}/share"
         headers = get_forwarded_headers(request)
-        headers['Authorization'] = f'Bearer {share_token}'
         
-        response = requests.post(
-            target_url,
+        share_data = {
+            'doc_id': data.get('doc_id'),
+            'recipient_id': recipient_id
+        }
+        
+        share_response = requests.post(
+            share_url,
             headers=headers,
-            json=request_data
+            json=share_data
         )
-        
-        print(f"Gateway: Share service response: {response.status_code}")
-        if response.status_code != 200 and response.status_code != 201:
-            print(f"Gateway: Share service error response: {response.content.decode()}")
         
         return Response(
-            response.content,
-            status=response.status_code,
+            share_response.content,
+            status=share_response.status_code,
             headers={
                 'Content-Type': 'application/json',
                 'Access-Control-Allow-Origin': 'http://localhost:3000',
@@ -474,7 +477,7 @@ def create_share():
         
     except requests.exceptions.RequestException as e:
         print(f"Gateway error: {str(e)}")
-        return jsonify({'error': 'Share service unavailable'}), 503
+        return jsonify({'error': 'Service unavailable'}), 503
 
 @app.route('/share/<int:share_id>', methods=['DELETE', 'OPTIONS'])
 def revoke_share(share_id):
@@ -509,110 +512,40 @@ def revoke_share(share_id):
         print(f"Gateway error: {str(e)}")
         return jsonify({'error': 'Share service unavailable'}), 503
 
-def get_user_email(user_id):
-    try:
-        # Call the auth service to get user details
-        service_url = SERVICES['auth']
-        target_url = f"{service_url}/auth/users/{user_id}"
-        
-        response = requests.get(target_url)
-        if response.status_code == 200:
-            user_data = response.json()
-            return user_data.get('email')
-        else:
-            print(f"Gateway: Error fetching user email: {response.status_code}")
-            return None
-    except Exception as e:
-        print(f"Gateway: Error in get_user_email: {str(e)}")
-        return None
-
-@app.route('/share/shared-with-me', methods=['GET', 'OPTIONS'])
+@app.route('/share/shared-with-me', methods=['GET'])
 def get_shared_with_me():
-    if request.method == 'OPTIONS':
-        response = make_response()
-        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
-        response.headers.add('Access-Control-Allow-Credentials', 'true')
-        return response
-
     try:
-        # Get user email from auth service
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({'error': 'No valid authorization token provided'}), 401
-
-        # Extract token and decode it
-        token = auth_header.split(' ')[1]
-        decoded = jwt.decode(token, os.getenv('JWT_SECRET_KEY'), algorithms=['HS256'])
-        user_id = decoded.get('user_id')
-        
+        # Get user details from auth service
+        user_id = get_user_id_from_token(request)
         if not user_id:
-            return jsonify({'error': 'Invalid token: no user_id claim'}), 401
-            
-        # Get user email from auth service
-        auth_service_url = SERVICES['auth']
-        auth_endpoint = f"{auth_service_url}/auth/users/{user_id}"
-        print(f"Gateway: Requesting user details from: {auth_endpoint}")
-        print(f"Gateway: Using headers: {auth_header}")
-        
-        auth_response = requests.get(
-            auth_endpoint,
-            headers={'Authorization': auth_header}
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        # Forward to share service with recipient_id instead of email
+        share_service_url = SERVICES['share']
+        share_response = requests.get(
+            f"{share_service_url}/share/shared-with-me",
+            params={'recipient_id': user_id},
+            headers=get_forwarded_headers(request)
         )
         
-        print(f"Gateway: Auth service response status: {auth_response.status_code}")
-        print(f"Gateway: Auth service response: {auth_response.text}")
-        
-        if auth_response.status_code != 200:
-            print(f"Gateway: Error fetching user details: {auth_response.status_code}")
-            return jsonify({'error': f'Could not fetch user details: {auth_response.text}'}), 500
+        if share_response.status_code != 200:
+            return Response(
+                share_response.content,
+                status=share_response.status_code,
+                headers={'Content-Type': 'application/json'}
+            )
             
-        user_data = auth_response.json()
-        user_email = user_data.get('email')
+        print(f"Gateway: Share service response status: {share_response.status_code}")
+        print(f"Gateway: Share service response: {share_response.text}")
         
-        if not user_email:
-            return jsonify({'error': 'Could not determine user email'}), 500
-            
-        print(f"Gateway: Fetched email {user_email} for user_id {user_id}")
+        response = make_response(share_response.content, share_response.status_code)
+        response.headers['Access-Control-Allow-Origin'] = 'http://localhost:3000'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        return response
         
-        # Forward request to share service
-        service_url = SERVICES['share']
-        target_url = f"{service_url}/share/shared-with-me"
-        
-        print(f"Gateway: Forwarding to share service: {target_url}")
-        print(f"Gateway: With email parameter: {user_email}")
-        
-        # Add email to query parameters
-        headers = get_forwarded_headers(request)
-        response = requests.get(
-            target_url,
-            headers=headers,
-            params={'recipient_email': user_email}
-        )
-        
-        print(f"Gateway: Share service response status: {response.status_code}")
-        print(f"Gateway: Share service response: {response.text}")
-        
-        return Response(
-            response.content,
-            status=response.status_code,
-            headers={
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': 'http://localhost:3000',
-                'Access-Control-Allow-Credentials': 'true'
-            }
-        )
-        
-    except jwt.InvalidTokenError as e:
-        print(f"Gateway: Invalid token error: {str(e)}")
-        return jsonify({'error': 'Invalid token'}), 401
     except requests.exceptions.RequestException as e:
-        print(f"Gateway error: {str(e)}")
-        return jsonify({'error': 'Service unavailable'}), 503
-    except Exception as e:
-        print(f"Gateway: Unexpected error: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
+        print(f"Gateway error in get_shared_with_me: {str(e)}")
+        return jsonify({'error': 'Share service unavailable'}), 503
 
 @app.route('/share/shared-by-me', methods=['GET', 'OPTIONS'])
 def get_shared_by_me():

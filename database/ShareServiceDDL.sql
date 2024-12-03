@@ -12,14 +12,11 @@ CREATE TABLE SharedDocuments (
     doc_id INTEGER NOT NULL,
     owner_id INTEGER NOT NULL,          -- User who owns/shared the document
     recipient_id INTEGER NOT NULL,       -- User who received access
+    display_name VARCHAR(255) NOT NULL,  -- Current name of the document (can be updated)
+    original_name VARCHAR(255) NOT NULL, -- Original name when first shared
     shared_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_accessed TIMESTAMP,
     expiry_date TIMESTAMP,              -- Optional expiration date for sharing
-    permissions JSONB NOT NULL DEFAULT '{
-        "can_view": true,
-        "can_download": false,
-        "can_reshare": false
-    }',
     status VARCHAR(20) NOT NULL DEFAULT 'active'  -- active, revoked, expired
 );
 
@@ -28,6 +25,9 @@ CREATE INDEX idx_shared_docs_owner ON SharedDocuments(owner_id);
 CREATE INDEX idx_shared_docs_recipient ON SharedDocuments(recipient_id);
 CREATE INDEX idx_shared_docs_doc ON SharedDocuments(doc_id);
 CREATE INDEX idx_shared_docs_status ON SharedDocuments(status);
+-- Add index for recipient lookup
+CREATE INDEX idx_recipient_id ON SharedDocuments(recipient_id);
+CREATE INDEX idx_owner_id ON SharedDocuments(owner_id);
 
 -- Add unique constraint to prevent duplicate shares
 CREATE UNIQUE INDEX idx_unique_share 
@@ -49,9 +49,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Trigger to update last_accessed on any permission check
+-- Trigger to update last_accessed on any access
 CREATE TRIGGER trigger_update_last_accessed
     BEFORE UPDATE ON SharedDocuments
     FOR EACH ROW
     WHEN (OLD.last_accessed IS DISTINCT FROM NEW.last_accessed)
-    EXECUTE FUNCTION update_last_accessed(); 
+    EXECUTE FUNCTION update_last_accessed();

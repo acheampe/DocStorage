@@ -159,3 +159,42 @@ def get_user(current_user_id, user_id):
     except Exception as e:
         print(f"Error fetching user: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
+
+@auth_bp.route('/users/by-email/<email>', methods=['GET'])
+@jwt_required()
+def get_user_by_email(current_user_id, email):
+    try:
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+            
+        return jsonify({
+            'user_id': user.user_id,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name
+        }), 200
+        
+    except Exception as e:
+        print(f"Error fetching user by email: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@auth_bp.route('/user/by-email', methods=['POST'])
+def get_user_id_from_email():
+    try:
+        data = request.get_json()
+        if not data or 'email' not in data:
+            return jsonify({'error': 'Email is required'}), 400
+            
+        user = User.query.filter_by(email=data['email']).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+            
+        return jsonify({
+            'user_id': user.user_id,
+            'email': user.email
+        }), 200
+        
+    except Exception as e:
+        print(f"Error in get_user_id_from_email: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
