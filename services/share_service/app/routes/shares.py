@@ -17,16 +17,29 @@ def create_share(current_user):
         print("Share Service: Starting share creation...")
         
         data = request.get_json()
-        print(f"Share Service: Received raw request data: {request.get_data()}")
         print(f"Share Service: Parsed JSON data: {data}")
-        print(f"Share Service: Current user: {current_user}")
         
         # Validate required fields
         required_fields = ['doc_id', 'recipient_id']
         for field in required_fields:
             if field not in data:
-                print(f"Share Service: Missing required field: {field}")
                 return jsonify({'error': f'Missing required field: {field}'}), 400
+        
+        # Fetch original filename from doc management service
+        gateway_url = os.getenv('GATEWAY_URL', 'http://localhost:5000')
+        doc_response = requests.get(
+            f"{gateway_url}/docs/file/{data['doc_id']}",
+            headers={'Authorization': request.headers.get('Authorization')}
+        )
+        
+        if doc_response.status_code != 200:
+            return jsonify({'error': 'Failed to fetch document details'}), 400
+            
+        doc_data = doc_response.json()
+        original_filename = doc_data.get('filename', f"Document {data['doc_id']}")
+        
+        # Create a unique path under DocStorageDocuments directory
+        file_path = f"DocStorageDocuments/shared/{current_user['user_id']}/{data['recipient_id']}/{data['doc_id']}"
         
         try:
             # Create share with application context
@@ -35,8 +48,9 @@ def create_share(current_user):
                     doc_id=data['doc_id'],
                     owner_id=current_user['user_id'],
                     recipient_id=data['recipient_id'],
-                    display_name=data.get('display_name', f"Document {data['doc_id']}"),
-                    original_name=data.get('original_name', f"Document {data['doc_id']}"),
+                    display_name=data.get('display_name', original_filename),
+                    original_filename=original_filename,
+                    file_path=file_path,  # Use the path under DocStorageDocuments
                     expiry_date=data.get('expiry_date'),
                     status='active'
                 )
