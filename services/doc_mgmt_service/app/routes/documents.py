@@ -623,15 +623,22 @@ def get_all_documents():
         print("Traceback:", traceback.format_exc())
         return jsonify({'error': 'Internal server error'}), 500
 
-@docs_bp.route('/docs/file/<int:doc_id>', methods=['GET'])
+@docs_bp.route('/docs/file/<int:doc_id>/metadata', methods=['GET'])
 def get_file_metadata(doc_id):
     try:
         document = Document.query.filter_by(doc_id=doc_id).first()
         if not document:
             return jsonify({'error': 'Document not found'}), 404
             
-        return jsonify(document.to_dict())
+        # Return metadata as JSON
+        return jsonify({
+            'doc_id': document.doc_id,
+            'original_filename': document.original_filename,
+            'file_path': document.file_path,
+            'file_type': document.file_type,
+            'upload_date': document.upload_date.isoformat() if document.upload_date else None
+        })
         
     except Exception as e:
-        print(f"Error retrieving document: {str(e)}")
+        print(f"Error retrieving document metadata: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500

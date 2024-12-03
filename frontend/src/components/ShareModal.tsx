@@ -8,17 +8,47 @@ interface ShareModalProps {
   infoMessage?: React.ReactNode;
 }
 
+interface UserLookupResponse {
+  user_id: number;
+  email: string;
+}
+
 export default function ShareModal({ onClose, isBulkShare, selectedFiles, selectedCount, infoMessage }: ShareModalProps) {
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isValidatingEmail, setIsValidatingEmail] = useState(false);
+
+  const lookupUserByEmail = async (email: string): Promise<number> => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('Not authenticated');
+    }
+
+    const response = await fetch(`http://127.0.0.1:5000/users/lookup?email=${encodeURIComponent(email)}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error('User not found. Please ensure the recipient has a DocStorage account.');
+      }
+      throw new Error('Failed to validate recipient');
+    }
+
+    const userData: UserLookupResponse = await response.json();
+    return userData.user_id;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
     setSuccessMessage(null);
+    setIsValidatingEmail(true);
 
     try {
       if (!selectedFiles?.length) {
@@ -30,6 +60,14 @@ export default function ShareModal({ onClose, isBulkShare, selectedFiles, select
         throw new Error('Not authenticated');
       }
 
+      const recipientId = await lookupUserByEmail(email);
+
+      const payload = {
+        doc_id: selectedFiles[0],
+        recipient_id: recipientId
+      };
+      console.log('Share Request Payload:', payload);
+
       const response = await fetch('http://127.0.0.1:5000/share', {
         method: 'POST',
         headers: {
@@ -37,10 +75,7 @@ export default function ShareModal({ onClose, isBulkShare, selectedFiles, select
           'Authorization': `Bearer ${token}`
         },
         credentials: 'include',
-        body: JSON.stringify({
-          doc_id: selectedFiles[0],
-          recipient_email: email,
-        })
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
@@ -64,6 +99,7 @@ export default function ShareModal({ onClose, isBulkShare, selectedFiles, select
       setError(error instanceof Error ? error.message : 'Failed to share file');
     } finally {
       setIsLoading(false);
+      setIsValidatingEmail(false);
     }
   };
 
@@ -121,6 +157,12 @@ export default function ShareModal({ onClose, isBulkShare, selectedFiles, select
             </div>
           )}
 
+          {isValidatingEmail && (
+            <div className="mb-4 p-3 bg-blue-50 text-blue-700 rounded-lg text-sm">
+              Validating recipient email...
+            </div>
+          )}
+
           <div className="flex justify-end gap-4">
             <button
               type="button"
@@ -131,10 +173,12 @@ export default function ShareModal({ onClose, isBulkShare, selectedFiles, select
             </button>
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || isValidatingEmail}
               className="px-4 py-2 bg-navy text-white rounded hover:bg-opacity-90 disabled:opacity-50"
             >
-              {isLoading ? 'Sharing...' : 'Share'}
+              {isLoading ? 'Sharing...' : 
+               isValidatingEmail ? 'Validating...' : 
+               'Share'}
             </button>
           </div>
         </form>

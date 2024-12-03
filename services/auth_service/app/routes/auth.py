@@ -218,3 +218,26 @@ def get_user_by_id():
     except Exception as e:
         print(f"Error in get_user_by_id: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
+
+@auth_bp.route('/users/lookup', methods=['GET'])
+@jwt_required()
+def lookup_user(current_user_id):
+    try:
+        email = request.args.get('email')
+        if not email:
+            return jsonify({'error': 'Email parameter is required'}), 400
+            
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+            
+        return jsonify({
+            'user_id': user.user_id,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name
+        }), 200
+        
+    except Exception as e:
+        print(f"Error in lookup_user: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500

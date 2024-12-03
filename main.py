@@ -438,47 +438,82 @@ def create_share():
         return response
 
     try:
-        # Get request data
         data = request.get_json()
         print(f"Gateway: Received share request data: {data}")
         
-        # Get recipient's user ID from email
-        recipient_email = data.get('recipient_email')
-        recipient_id = get_user_id_from_email(recipient_email)
-        
-        if not recipient_id:
-            return jsonify({
-                'error': 'Recipient not found. They must have a DocStorage account.'
-            }), 404
-
-        # Forward the share request to the share service
-        share_url = f"{SERVICES['share']}/share"
+        # Get document metadata from docs service
+        docs_url = f"{SERVICES['docs']}/docs/file/{data['doc_id']}/metadata"
         headers = get_forwarded_headers(request)
         
+        print(f"Gateway: Fetching document details from: {docs_url}")
+        print(f"Gateway: Using headers: {headers}")
+        
+        docs_response = requests.get(
+            docs_url,
+            headers=headers,
+            timeout=5
+        )
+        
+        print(f"Gateway: Docs service response status: {docs_response.status_code}")
+        print(f"Gateway: Docs service response content: {docs_response.content.decode('utf-8', errors='replace')}")
+        
+        if docs_response.status_code != 200:
+            error_msg = f"Document not found: {docs_response.text}"
+            print(f"Gateway: {error_msg}")
+            response = jsonify({'error': error_msg})
+            response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+            response.headers.add('Access-Control-Allow-Credentials', 'true')
+            return response, docs_response.status_code
+            
+        # Add document metadata to share request
+        doc_metadata = docs_response.json()
         share_data = {
-            'doc_id': data.get('doc_id'),
-            'recipient_id': recipient_id
+            **data,
+            'document_metadata': doc_metadata  # Include metadata in share request
         }
+            
+        # Forward to share service
+        share_url = f"{SERVICES['share']}/share"
+        print(f"Gateway: Forwarding to share service: {share_url}")
+        print(f"Gateway: Share request data: {share_data}")
         
         share_response = requests.post(
             share_url,
             headers=headers,
-            json=share_data
+            json=share_data,
+            timeout=5
         )
         
-        return Response(
+        print(f"Gateway: Share service response status: {share_response.status_code}")
+        print(f"Gateway: Share service response content: {share_response.content.decode('utf-8', errors='replace')}")
+        
+        # Create response with proper CORS headers
+        response = Response(
             share_response.content,
             status=share_response.status_code,
             headers={
                 'Content-Type': 'application/json',
                 'Access-Control-Allow-Origin': 'http://localhost:3000',
-                'Access-Control-Allow-Credentials': 'true'
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Methods': 'POST,OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization'
             }
         )
-        
+        return response
+            
     except requests.exceptions.RequestException as e:
-        print(f"Gateway error: {str(e)}")
-        return jsonify({'error': 'Service unavailable'}), 503
+        print(f"Gateway error (Request failed): {str(e)}")
+        error_response = jsonify({'error': f'Service unavailable: {str(e)}'})
+        error_response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        error_response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return error_response, 503
+    except Exception as e:
+        print(f"Gateway error (Unexpected): {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        error_response = jsonify({'error': 'Internal server error'})
+        error_response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        error_response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return error_response, 500
 
 @app.route('/share/<int:share_id>', methods=['DELETE', 'OPTIONS'])
 def revoke_share(share_id):
@@ -826,6 +861,42 @@ def get_jwt_data(auth_header):
         return jwt.decode(token, os.getenv('JWT_SECRET_KEY'), algorithms=['HS256'])
     except jwt.InvalidTokenError:
         return None
+
+@app.route('/users/lookup', methods=['GET', 'OPTIONS'])
+def lookup_user():
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        # Forward request to auth service
+        service_url = SERVICES['auth']
+        target_url = f"{service_url}/auth/users/lookup"
+        
+        # Forward the email parameter and headers
+        response = requests.get(
+            target_url,
+            headers=get_forwarded_headers(request),
+            params={'email': request.args.get('email')}
+        )
+        
+        return Response(
+            response.content,
+            status=response.status_code,
+            headers={
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error in lookup_user: {str(e)}")
+        return jsonify({'error': 'Auth service unavailable'}), 503
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000)

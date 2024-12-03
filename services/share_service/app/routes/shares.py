@@ -9,6 +9,10 @@ import os
 import requests
 import traceback
 from sqlalchemy import text
+from pathlib import Path
+
+# Get storage path from environment variable, with a default fallback
+STORAGE_PATH = os.getenv('STORAGE_PATH', 'DocStorageDocuments')
 
 @share_bp.route('/share', methods=['POST'])
 @require_auth
@@ -20,26 +24,21 @@ def create_share(current_user):
         print(f"Share Service: Parsed JSON data: {data}")
         
         # Validate required fields
-        required_fields = ['doc_id', 'recipient_id']
+        required_fields = ['doc_id', 'recipient_id', 'document_metadata']
         for field in required_fields:
             if field not in data:
                 return jsonify({'error': f'Missing required field: {field}'}), 400
         
-        # Fetch original filename from doc management service
-        gateway_url = os.getenv('GATEWAY_URL', 'http://localhost:5000')
-        doc_response = requests.get(
-            f"{gateway_url}/docs/file/{data['doc_id']}",
-            headers={'Authorization': request.headers.get('Authorization')}
-        )
+        # Use document metadata from the request
+        doc_metadata = data['document_metadata']
+        original_filename = doc_metadata.get('original_filename', f"Document {data['doc_id']}")
         
-        if doc_response.status_code != 200:
-            return jsonify({'error': 'Failed to fetch document details'}), 400
-            
-        doc_data = doc_response.json()
-        original_filename = doc_data.get('filename', f"Document {data['doc_id']}")
+        # Create shared file path using environment variable
+        shared_file_path = f"{STORAGE_PATH}/shared/{current_user['user_id']}/{data['recipient_id']}/{data['doc_id']}_{original_filename}"
         
-        # Create a unique path under DocStorageDocuments directory
-        file_path = f"DocStorageDocuments/shared/{current_user['user_id']}/{data['recipient_id']}/{data['doc_id']}"
+        # Ensure the directory structure exists
+        shared_dir = os.path.dirname(shared_file_path)
+        Path(shared_dir).mkdir(parents=True, exist_ok=True)
         
         try:
             # Create share with application context
@@ -50,7 +49,7 @@ def create_share(current_user):
                     recipient_id=data['recipient_id'],
                     display_name=data.get('display_name', original_filename),
                     original_filename=original_filename,
-                    file_path=file_path,  # Use the path under DocStorageDocuments
+                    file_path=shared_file_path,
                     expiry_date=data.get('expiry_date'),
                     status='active'
                 )

@@ -7,6 +7,7 @@ from typing import Dict, Any
 import threading
 import random
 import re
+import time
 
 # ANSI color codes for terminal output
 COLORS = {
@@ -99,24 +100,78 @@ def redact_sensitive_info(message: str) -> str:
     
     return colored_message
 
-def stream_output(process, name):
-    """Stream the output of a process to the console"""
-    for line in iter(process.stdout.readline, ''):
-        log(redact_sensitive_info(line.strip()), "INFO", name)
-    for line in iter(process.stderr.readline, ''):
-        log(redact_sensitive_info(line.strip()), "ERROR", name)
+class ServiceStatus:
+    def __init__(self):
+        self.services = {}
+        self.lock = threading.Lock()
+
+    def update(self, name: str, status: str, pid: int = None, port: int = None):
+        with self.lock:
+            self.services[name] = {
+                'status': status,
+                'pid': pid,
+                'port': port,
+                'last_update': datetime.now()
+            }
+
+    def get_status(self):
+        with self.lock:
+            return self.services.copy()
+
+    def print_status(self):
+        with self.lock:
+            print(f"\n{COLORS['HEADER']}{'='*80}{COLORS['ENDC']}")
+            print(f"{COLORS['BOLD']}Current Service Status:{COLORS['ENDC']}")
+            print(f"{COLORS['HEADER']}{'='*80}{COLORS['ENDC']}")
+            
+            for name, info in self.services.items():
+                service_color = SERVICE_COLORS.get(name, COLORS['WHITE'])
+                status_color = {
+                    'STARTING': COLORS['YELLOW'],
+                    'RUNNING': COLORS['GREEN'],
+                    'FAILED': COLORS['RED'],
+                    'TERMINATED': COLORS['MAGENTA']
+                }.get(info['status'], COLORS['WHITE'])
+                
+                print(f"  {service_color}{name:<25}{COLORS['ENDC']} - "
+                      f"{status_color}{info['status']:<12}{COLORS['ENDC']} "
+                      f"PID: {info['pid'] or 'N/A':<8} "
+                      f"Port: {info['port'] or 'N/A':<6}")
+            
+            print(f"{COLORS['HEADER']}{'='*80}{COLORS['ENDC']}\n")
+
+def stream_output(process, name, status_tracker):
+    """Stream the output of a process to the console and update status"""
+    try:
+        for line in iter(process.stdout.readline, ''):
+            log(redact_sensitive_info(line.strip()), "INFO", name)
+            # Check for successful startup messages
+            if "Running on http://" in line:
+                port = re.search(r":(\d+)", line)
+                if port:
+                    status_tracker.update(name, "RUNNING", process.pid, int(port.group(1)))
+                    status_tracker.print_status()
+        
+        for line in iter(process.stderr.readline, ''):
+            log(redact_sensitive_info(line.strip()), "ERROR", name)
+            
+    except Exception as e:
+        log(f"Output stream error: {str(e)}", "ERROR", name)
+        status_tracker.update(name, "FAILED")
+        status_tracker.print_status()
 
 def start_services():
-    # Define base directory
+    status_tracker = ServiceStatus()
     base_dir = Path(__file__).parent
 
-    # Service configurations
+    # Service configurations with ports
     services = [
         {
             "name": "API Gateway",
             "dir": base_dir,
             "command": [get_venv_python(), "main.py"],
-            "env": os.environ.copy()
+            "env": os.environ.copy(),
+            "port": 5000
         },
         {
             "name": "Frontend",
@@ -150,22 +205,14 @@ def start_services():
         }
     ]
 
-    # Print startup banner
-    print(f"\n{COLORS['HEADER']}{'='*80}{COLORS['ENDC']}")
-    log("Starting DocStorage Services", "INFO", "System")
-    print(f"{COLORS['HEADER']}{'='*80}{COLORS['ENDC']}\n")
-
-    # Print color legend
-    print(f"{COLORS['BOLD']}Service Color Legend:{COLORS['ENDC']}")
-    for service in services:
-        service_color = SERVICE_COLORS.get(service['name'], COLORS['WHITE'])
-        print(f"  {service_color}{service['name']}{COLORS['ENDC']}")
-    print()
+    processes = []
+    startup_timeout = 30  # seconds
 
     # Start all services
-    processes = []
     for service in services:
-        log(f"Starting {service['name']}...", "INFO", "System")
+        status_tracker.update(service["name"], "STARTING")
+        status_tracker.print_status()
+        
         try:
             process = subprocess.Popen(
                 service["command"],
@@ -176,18 +223,41 @@ def start_services():
                 universal_newlines=True
             )
             processes.append((service["name"], process))
-            threading.Thread(target=stream_output, args=(process, service["name"])).start()
-            log(f"{service['name']} started with PID {process.pid}", "SUCCESS", "System")
+            threading.Thread(
+                target=stream_output, 
+                args=(process, service["name"], status_tracker)
+            ).start()
+            
         except Exception as e:
             log(f"Failed to start {service['name']}: {str(e)}", "ERROR", "System")
+            status_tracker.update(service["name"], "FAILED")
+            status_tracker.print_status()
+            
+            # Terminate all running services if any fails to start
+            log("Initiating shutdown due to startup failure", "ERROR", "System")
+            for name, proc in processes:
+                try:
+                    status_tracker.update(name, "TERMINATING")
+                    proc.terminate()
+                    proc.wait(timeout=5)
+                    status_tracker.update(name, "TERMINATED")
+                except Exception as term_e:
+                    log(f"Error terminating {name}: {str(term_e)}", "ERROR", "System")
+                    status_tracker.update(name, "FAILED")
+            
+            status_tracker.print_status()
+            return
 
     # Monitor processes
     try:
         while True:
             for name, process in processes:
                 if process.poll() is not None:
-                    log(f"{name} has terminated!", "ERROR", "System")
+                    status_tracker.update(name, "FAILED")
+                    status_tracker.print_status()
+                    log(f"{name} has terminated unexpectedly!", "ERROR", "System")
                     return
+            time.sleep(1)
 
     except KeyboardInterrupt:
         print(f"\n{COLORS['HEADER']}{'='*80}{COLORS['ENDC']}")

@@ -11,7 +11,7 @@ CREATE TABLE Documents (
     doc_id SERIAL PRIMARY KEY,
     user_id INT NOT NULL,
     filename VARCHAR(255) NOT NULL,          -- Internal filename (with timestamp)
-    original_filename VARCHAR(255) NOT NULL,  -- Original user filename
+    original_filename VARCHAR(255) NOT NULL,  -- Original filename
     file_type VARCHAR(100) NOT NULL,
     file_size INT NOT NULL,
     file_path VARCHAR(255) NOT NULL,
