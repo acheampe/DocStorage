@@ -711,14 +711,21 @@ export default function Dashboard() {
                         {getFileIcon(share.filename)}
                       </span>
                     </div>
-                    <h4 className="font-bold text-navy truncate">{share.filename}</h4>
-                    <div className="flex justify-between items-center mt-2">
-                      <p className="text-sm text-gray-600">
-                        {share.shared_date ? new Date(share.shared_date).toLocaleDateString() : 'N/A'}
-                      </p>
-                      <span className="text-sm text-navy">
-                        Shared with: {share.shared_with || 'Unknown'}
-                      </span>
+                    
+                    {/* File name and metadata container */}
+                    <div className="flex justify-between items-start">
+                      {/* File name */}
+                      <h4 className="font-bold text-navy truncate max-w-[60%]">{share.filename}</h4>
+                      
+                      {/* Share info container - stacked on right */}
+                      <div className="flex flex-col items-end text-sm">
+                        <span className="text-navy mb-1">
+                          Shared with: {share.shared_with || 'Unknown'}
+                        </span>
+                        <span className="text-gray-600">
+                          {share.shared_date ? new Date(share.shared_date).toLocaleDateString() : 'N/A'}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 ))}
