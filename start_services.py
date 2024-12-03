@@ -65,8 +65,8 @@ def get_venv_npm():
     return "npm"
 
 def redact_sensitive_info(message: str) -> str:
-    """Redact sensitive information from log messages"""
-    # List of patterns to redact
+    """Redact sensitive information and color code HTTP status codes"""
+    # First redact sensitive information
     patterns = [
         (r'SECRET_KEY:.*?[=\s]([^\s]+)', r'SECRET_KEY: [REDACTED]'),
         (r'DB_URL:.*?[=\s]([^\s]+)', r'DB_URL: [REDACTED]'),
@@ -74,12 +74,30 @@ def redact_sensitive_info(message: str) -> str:
         (r'Bearer\s+[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.?[A-Za-z0-9-_.+/=]*', r'Bearer [REDACTED]')
     ]
     
-    # Apply each redaction pattern
+    # Apply redaction patterns
     redacted_message = message
     for pattern, replacement in patterns:
         redacted_message = re.sub(pattern, replacement, redacted_message)
     
-    return redacted_message
+    # Color code HTTP status codes
+    status_patterns = [
+        # 2xx Success (Green)
+        (r'\b(200|201|202|203|204|205|206)\b', f"{COLORS['GREEN']}\\1{COLORS['ENDC']}"),
+        # 3xx Redirection (Cyan)
+        (r'\b(300|301|302|303|304|305|307|308)\b', f"{COLORS['CYAN']}\\1{COLORS['ENDC']}"),
+        # 4xx Client Errors (Yellow)
+        (r'\b(400|401|402|403|404|405|406|407|408|409|410|411|412|413|414|415|416|417|418|429)\b', 
+         f"{COLORS['YELLOW']}\\1{COLORS['ENDC']}"),
+        # 5xx Server Errors (Red)
+        (r'\b(500|501|502|503|504|505|506|507|508|509|510|511)\b', f"{COLORS['RED']}\\1{COLORS['ENDC']}")
+    ]
+    
+    # Apply status code coloring
+    colored_message = redacted_message
+    for pattern, replacement in status_patterns:
+        colored_message = re.sub(pattern, replacement, colored_message)
+    
+    return colored_message
 
 def stream_output(process, name):
     """Stream the output of a process to the console"""
