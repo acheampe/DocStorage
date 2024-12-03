@@ -515,37 +515,42 @@ def revoke_share(share_id):
 @app.route('/share/shared-with-me', methods=['GET'])
 def get_shared_with_me():
     try:
-        # Get user details from auth service
-        user_id = get_user_id_from_token(request)
+        # Get user ID from token
+        user_id = get_user_id_from_token(request.headers.get('Authorization'))
         if not user_id:
             return jsonify({'error': 'Unauthorized'}), 401
 
-        # Forward to share service with recipient_id instead of email
+        # Forward to share service
         share_service_url = SERVICES['share']
+        target_url = f"{share_service_url}/share/shared-with-me"
+        
+        print(f"Gateway: Forwarding shared-with-me request to: {target_url}")
+        print(f"Gateway: User ID: {user_id}")
+        
         share_response = requests.get(
-            f"{share_service_url}/share/shared-with-me",
+            target_url,
             params={'recipient_id': user_id},
             headers=get_forwarded_headers(request)
         )
         
-        if share_response.status_code != 200:
-            return Response(
-                share_response.content,
-                status=share_response.status_code,
-                headers={'Content-Type': 'application/json'}
-            )
-            
         print(f"Gateway: Share service response status: {share_response.status_code}")
-        print(f"Gateway: Share service response: {share_response.text}")
         
-        response = make_response(share_response.content, share_response.status_code)
-        response.headers['Access-Control-Allow-Origin'] = 'http://localhost:3000'
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        return response
+        return Response(
+            share_response.content,
+            status=share_response.status_code,
+            headers={
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
         
     except requests.exceptions.RequestException as e:
         print(f"Gateway error in get_shared_with_me: {str(e)}")
         return jsonify({'error': 'Share service unavailable'}), 503
+    except Exception as e:
+        print(f"Unexpected error in get_shared_with_me: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/share/shared-by-me', methods=['GET', 'OPTIONS'])
 def get_shared_by_me():
