@@ -1,69 +1,57 @@
 import React, { useState } from 'react';
 
 interface ShareModalProps {
-  docId: number;
   onClose: () => void;
-  onShare?: (email: string, permissions: SharePermissions) => Promise<void>;
   isBulkShare?: boolean;
   selectedFiles?: number[];
   selectedCount?: number;
-  className?: string;
   infoMessage?: React.ReactNode;
 }
 
-interface SharePermissions {
-  can_view: boolean;
-  can_download: boolean;
-  can_reshare: boolean;
-}
-
-export default function ShareModal({ docId, onClose, onShare, isBulkShare, selectedFiles, selectedCount, className, infoMessage }: ShareModalProps) {
+export default function ShareModal({ onClose, isBulkShare, selectedFiles, selectedCount, infoMessage }: ShareModalProps) {
   const [email, setEmail] = useState('');
-  const [permissions, setPermissions] = useState<SharePermissions>({
-    can_view: true,
-    can_download: false,
-    can_reshare: false
-  });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
     setIsLoading(true);
+    setError(null);
+    setSuccessMessage(null);
 
     try {
+      if (!selectedFiles?.length) {
+        throw new Error('No file selected');
+      }
+
       const token = localStorage.getItem('token');
-      
-      console.log('JWT Token:', token);
-
-      const body = isBulkShare
-        ? { doc_ids: selectedFiles, recipient_email: email, permissions }
-        : { doc_id: docId, recipient_email: email, permissions };
-
-      console.log('Share request payload:', body);
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
 
       const response = await fetch('http://127.0.0.1:5000/share', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         credentials: 'include',
-        body: JSON.stringify(body)
+        body: JSON.stringify({
+          doc_id: selectedFiles[0],
+          recipient_email: email,
+        })
       });
 
-      const contentType = response.headers.get('content-type');
       if (!response.ok) {
-        if (contentType && contentType.includes('application/json')) {
-          const data = await response.json();
-          throw new Error(data.error || 'Failed to share file');
-        } else {
-          const text = await response.text();
-          console.error('Server response:', text);
-          throw new Error('Server error occurred');
+        let errorMessage = 'Failed to share file';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch (e) {
+          errorMessage = response.statusText || errorMessage;
         }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
@@ -119,40 +107,6 @@ export default function ShareModal({ docId, onClose, onShare, isBulkShare, selec
             <p className="mt-2 text-sm text-gray-600">
               <strong>Note:</strong> The recipient must have a DocStorage account to access shared files.
             </p>
-          </div>
-
-          <div className="mb-6">
-            <label className="block text-navy font-medium mb-2">Permissions</label>
-            <div className="space-y-2">
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={permissions.can_view}
-                  onChange={(e) => setPermissions({...permissions, can_view: e.target.checked})}
-                  className="mr-2"
-                  disabled
-                />
-                Can View
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={permissions.can_download}
-                  onChange={(e) => setPermissions({...permissions, can_download: e.target.checked})}
-                  className="mr-2"
-                />
-                Can Download
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={permissions.can_reshare}
-                  onChange={(e) => setPermissions({...permissions, can_reshare: e.target.checked})}
-                  className="mr-2"
-                />
-                Can Reshare
-              </label>
-            </div>
           </div>
 
           {error && (

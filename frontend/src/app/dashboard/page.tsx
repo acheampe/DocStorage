@@ -579,7 +579,6 @@ export default function Dashboard() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      handlePreview(file, true);  // Pass true to indicate this is a share click
                       setShareModalOpen(file.doc_id);
                     }}
                     className="text-navy hover:text-gold transition-colors"
@@ -782,27 +781,11 @@ export default function Dashboard() {
       )}
 
       {/* Share Modal - Higher z-index */}
-      {shareModalOpen !== -1 && (
+      {shareModalOpen > -1 && (
         <ShareModal
-          docId={shareModalOpen}
           onClose={() => setShareModalOpen(-1)}
-          className="z-50"
-          infoMessage={
-            <div className="mb-4 p-3 bg-blue-50 text-navy rounded-lg text-sm">
-              <p className="flex items-center gap-2">
-                <span className="material-symbols-rounded text-lg">info</span>
-                Need to share multiple files? Visit the{' '}
-                <Link 
-                  href="/files" 
-                  className="text-gold hover:underline font-medium"
-                  onClick={() => setShareModalOpen(-1)}  // Close modal when clicking link
-                >
-                  View All Files
-                </Link>
-                {' '}page to use bulk sharing.
-              </p>
-            </div>
-          }
+          selectedFiles={[shareModalOpen]}
+          isBulkShare={false}
         />
       )}
     </div>
