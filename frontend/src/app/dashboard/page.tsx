@@ -388,6 +388,12 @@ export default function Dashboard() {
         return;
       }
 
+      // Find the file object that matches this docId
+      const file = [...recentFiles, ...searchResults, ...sharedWithMeFiles, ...sharedByMeFiles]
+        .find(f => f.doc_id === docId);
+      
+      const filename = file?.original_filename || file?.filename || `Document ${docId}`;
+
       const response = await fetch(`http://127.0.0.1:5000/docs/preview/${docId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -407,18 +413,17 @@ export default function Dashboard() {
         setPreviewData({
           type: 'image',
           url: URL.createObjectURL(data),
-          filename: `Document ${docId}`,
+          filename: filename,
           docId: docId
         });
       } else if (contentType === 'application/pdf') {
         setPreviewData({
           type: 'pdf',
           url: URL.createObjectURL(data),
-          filename: `Document ${docId}`,
+          filename: filename,
           docId: docId
         });
       } else {
-        // For other file types, may need to download instead
         console.log('Unsupported preview type:', contentType);
         setPreviewData(null);
       }
