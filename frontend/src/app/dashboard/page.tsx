@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Footer from '@/components/Footer'
 // import LockIcon from '@/components/LockIcon'
+import ShareModal from '@/components/ShareModal'
 
 interface User {
   user_id: number;
@@ -13,9 +14,54 @@ interface User {
 }
 
 interface File {
-  id: number;
-  name: string;
-  uploaded_at: string;
+  doc_id: number;
+  original_filename: string;
+  upload_date: string;
+  file_type: string;
+}
+
+interface PreviewData {
+  type: string;
+  url: string;
+  filename: string;
+  docId: number;
+}
+
+interface SharedFile {
+  share_id: number;
+  doc_id: number;
+  original_filename: string;
+  display_name: string;
+  filename?: string;
+  shared_date: string;
+  shared_with: string;
+  file_type?: string;
+}
+
+function getFileIcon(filename: string | undefined): string {
+  if (!filename) return 'document'; // Default icon if no filename
+  
+  const ext = filename.split('.').pop()?.toLowerCase();
+  
+  switch (ext) {
+      case 'pdf':
+          return 'picture_as_pdf';
+      case 'doc':
+      case 'docx':
+          return 'description';
+      case 'xls':
+      case 'xlsx':
+          return 'table_chart';
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+          return 'image';
+      case 'txt':
+          return 'article';
+      default:
+          return 'document';
+  }
 }
 
 export default function Dashboard() {
@@ -23,21 +69,430 @@ export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [recentFiles, setRecentFiles] = useState<File[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [imageUrls, setImageUrls] = useState<{ [key: number]: string }>({});
+  const [searchResults, setSearchResults] = useState<File[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [shareModalOpen, setShareModalOpen] = useState<number>(-1);
+  // const [sharedFiles, setSharedFiles] = useState<File[]>([]);
+  const [sectionsCollapsed, setSectionsCollapsed] = useState({
+    recent: false,
+    shared: false,
+    sharedByMe: false
+  });
+  const [sharedWithMeFiles, setSharedWithMeFiles] = useState<any[]>([]);
+  const [sharedByMeFiles, setSharedByMeFiles] = useState<SharedFile[]>([]);
 
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    if (!userData) {
+    try {
+      const userData = localStorage.getItem('user');
+      if (!userData) {
+        router.push('/login');
+        return;
+      }
+      const parsedUser = JSON.parse(userData);
+      if (!parsedUser || !parsedUser.user_id) {
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+        router.push('/login');
+        return;
+      }
+      setUser(parsedUser);
+    } catch (err) {
+      localStorage.removeItem('user');
+      localStorage.removeItem('token');
       router.push('/login');
-      return;
     }
-    setUser(JSON.parse(userData));
   }, [router]);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const uploadStatus = searchParams.get('upload');
+    
+    if (uploadStatus === 'success') {
+      setSuccessMessage('Files uploaded successfully!');
+      // Clear the message after 3 seconds
+      setTimeout(() => {
+        setSuccessMessage(null);
+        // Remove the query parameter
+        router.replace('/dashboard');
+      }, 3000);
+    } else if (uploadStatus === 'partial') {
+      setSuccessMessage('Some files were uploaded successfully');
+      setTimeout(() => {
+        setSuccessMessage(null);
+        router.replace('/dashboard');
+      }, 3000);
+    }
+  }, [router]);
+
+  useEffect(() => {
+    const fetchRecentFiles = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch('http://127.0.0.1:5000/docs/recent', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          credentials: 'include'
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch recent files');
+        }
+
+        const data = await response.json();
+        // Verify each file exists before adding to UI
+        const verifiedFiles = [];
+        for (const file of data.files) {
+          const verifyResponse = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            },
+            credentials: 'include'
+          });
+          if (verifyResponse.ok) {
+            verifiedFiles.push({
+              doc_id: file.doc_id,
+              original_filename: file.original_filename,
+              upload_date: file.upload_date,
+              file_type: file.file_type
+            });
+          }
+        }
+        setRecentFiles(verifiedFiles);
+      } catch (error) {
+        console.error('Error fetching recent files:', error);
+      }
+    };
+
+    if (user) {
+      fetchRecentFiles();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    const fetchSharedFiles = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const userData = localStorage.getItem('user');
+        if (!token || !userData) {
+          console.error('No token or user data found');
+          return;
+        }
+
+        const user = JSON.parse(userData);
+
+        // Fetch files shared with me
+        const withMeResponse = await fetch(`http://127.0.0.1:5000/share/shared-with-me?recipient_id=${user.user_id}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          credentials: 'include'
+        });
+
+        // Fetch files shared by me
+        const byMeResponse = await fetch(`http://127.0.0.1:5000/share/shared-by-me?owner_id=${user.user_id}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          credentials: 'include'
+        });
+
+        if (!withMeResponse.ok || !byMeResponse.ok) {
+          throw new Error('Failed to fetch shared files');
+        }
+
+        const withMeData = await withMeResponse.json();
+        const byMeData = await byMeResponse.json();
+
+        console.log('Shared with me:', withMeData);
+        console.log('Shared by me:', byMeData);
+
+        setSharedWithMeFiles(withMeData.shares || []);
+        setSharedByMeFiles(byMeData.shares || []);
+
+      } catch (error) {
+        console.error('Error fetching shared files:', error);
+      }
+    };
+
+    if (user) {
+      fetchSharedFiles();
+    }
+  }, [user]);
 
   const handleLogout = () => {
     localStorage.removeItem('user');
     localStorage.removeItem('token');
     router.push('/');
   };
+
+  const fetchThumbnail = async (docId: number, isShared: boolean = false) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(
+        isShared 
+          ? `http://127.0.0.1:5000/share/thumbnail/${docId}`
+          : `http://127.0.0.1:5000/docs/file/${docId}/thumbnail`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          credentials: 'include'
+        }
+      );
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    } catch (error) {
+      console.error('Error fetching thumbnail:', error);
+      return '/placeholder-image.png';
+    }
+  };
+
+  useEffect(() => {
+    const loadImages = async () => {
+      const newImageUrls: { [key: number]: string } = {};
+      
+      // Load thumbnails for recent files
+      for (const file of recentFiles) {
+        try {
+          const thumbnailUrl = await fetchThumbnail(file.doc_id, false);
+          if (thumbnailUrl) {
+            newImageUrls[file.doc_id] = thumbnailUrl;
+          }
+        } catch (error) {
+          console.error(`Error loading thumbnail for file ${file.doc_id}:`, error);
+        }
+      }
+      
+      // Load thumbnails for shared files
+      for (const file of sharedWithMeFiles) {
+        try {
+          const thumbnailUrl = await fetchThumbnail(file.doc_id, true);
+          if (thumbnailUrl) {
+            newImageUrls[file.doc_id] = thumbnailUrl;
+          }
+        } catch (error) {
+          console.error(`Error loading thumbnail for shared file ${file.doc_id}:`, error);
+        }
+      }
+      
+      setImageUrls(newImageUrls);
+    };
+
+    if (recentFiles.length > 0 || sharedWithMeFiles.length > 0) {
+      loadImages();
+    }
+
+    return () => {
+      Object.values(imageUrls).forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [recentFiles, sharedWithMeFiles]);
+
+  // Add debounced search
+  useEffect(() => {
+    const searchDocuments = async () => {
+      if (!searchQuery.trim()) {
+        setSearchResults([]);
+        setIsSearching(false);
+        return;
+      }
+
+      setIsSearching(true);
+      setSearchError(null);
+
+      try {
+        const token = localStorage.getItem('token');
+        const userData = localStorage.getItem('user');
+        const user = userData ? JSON.parse(userData) : null;
+
+        if (!user?.user_id) {
+          throw new Error('User ID not found');
+        }
+
+        const response = await fetch(
+          `http://127.0.0.1:5000/search?q=${encodeURIComponent(searchQuery)}&user_id=${user.user_id}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            credentials: 'include'
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error('Search failed');
+        }
+
+        const data = await response.json();
+        setSearchResults(data.results.map((result: any) => ({
+          doc_id: result.doc_id,
+          original_filename: result.metadata.filename,
+          upload_date: result.metadata.upload_date,
+          file_type: result.metadata.file_type,
+          shared_by: result.metadata.owner_id,
+          shared_with: result.metadata.recipient_id
+        })));
+      } catch (error) {
+        console.error('Error searching documents:', error);
+        setSearchError('Failed to search documents');
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    const timeoutId = setTimeout(searchDocuments, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
+
+  const handlePreview = async (docId: number, isSharedWithMe: boolean = false, filename: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.error('No token found');
+        return;
+      }
+
+      // Get file extension
+      const fileExt = filename.split('.').pop()?.toLowerCase();
+      
+      // Define previewable types
+      const previewableTypes = {
+        image: ['jpg', 'jpeg', 'png', 'gif', 'bmp'],
+        pdf: ['pdf'],
+        text: ['txt', 'md', 'csv']
+      };
+
+      // Check if file is previewable
+      const isPreviewable = Object.values(previewableTypes)
+        .flat()
+        .includes(fileExt || '');
+
+      // Use share endpoints for both "Shared with Me" and "Shared by Me" sections
+      const isSharedSection = isSharedWithMe || window.location.hash === '#shared-by-me';
+      
+      // For non-previewable files, ask for download first
+      if (!isPreviewable) {
+        const userConfirmed = window.confirm(
+          `"${filename}" cannot be previewed in the browser. Would you like to download it instead?`
+        );
+        
+        if (!userConfirmed) {
+          return;
+        }
+
+        const downloadEndpoint = isSharedSection
+          ? `http://127.0.0.1:5000/share/preview/${docId}`  // Use preview endpoint for shared files
+          : `http://127.0.0.1:5000/docs/file/${docId}`;     // Use file endpoint for regular docs
+
+        const downloadResponse = await fetch(downloadEndpoint, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': '*/*'
+          },
+          credentials: 'include'
+        });
+
+        if (!downloadResponse.ok) {
+          throw new Error(`Download failed: ${downloadResponse.status} ${downloadResponse.statusText}`);
+        }
+
+        const blob = await downloadResponse.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        return;
+      }
+
+      // For previewable files, use the appropriate endpoint
+      const endpoint = isSharedSection
+        ? `http://127.0.0.1:5000/share/preview/${docId}`  // Use preview endpoint for shared files
+        : `http://127.0.0.1:5000/docs/file/${docId}`;     // Use file endpoint for regular docs
+
+      const response = await fetch(endpoint, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': '*/*'
+        },
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        throw new Error(`File access failed: ${response.status} ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get('Content-Type') || '';
+      const data = await response.blob();
+
+      if (contentType.startsWith('image/')) {
+        setPreviewData({
+          type: 'image',
+          url: URL.createObjectURL(data),
+          filename: filename,
+          docId: docId
+        });
+      } else if (contentType === 'application/pdf') {
+        setPreviewData({
+          type: 'pdf',
+          url: URL.createObjectURL(data),
+          filename: filename,
+          docId: docId
+        });
+      } else if (contentType.startsWith('text/')) {
+        const text = await data.text();
+        setPreviewData({
+          type: 'text',
+          url: text,
+          filename: filename,
+          docId: docId
+        });
+      } else {
+        const userConfirmed = window.confirm(
+          `"${filename}" cannot be previewed in the browser. Would you like to download it instead?`
+        );
+        
+        if (userConfirmed) {
+          const url = window.URL.createObjectURL(data);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+        }
+      }
+    } catch (error) {
+      console.error('Error handling file:', error);
+      alert(`Error handling file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setPreviewData(null);
+    }
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const success = params.get('success');
+    if (success) {
+      setSuccessMessage(decodeURIComponent(success));
+      setTimeout(() => setSuccessMessage(null), 3000);
+      // Clean up URL
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -66,18 +521,26 @@ export default function Dashboard() {
         </div>
       </nav>
 
+      {successMessage && (
+        <div className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg transition-all duration-500 ease-in-out z-50 flex items-center gap-2">
+          <span className="material-symbols-rounded">check_circle</span>
+          {successMessage}
+        </div>
+      )}
+
       {/* Main Content */}
       <main className="flex-grow container mx-auto p-8">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-bold text-navy">
             Welcome, {user?.first_name}!
           </h1>
-          <button 
+          <Link 
+            href="/uploadFiles"
             className="bg-navy text-white px-6 py-2 rounded-lg hover:bg-opacity-90"
             title="Upload new documents to your storage"
           >
             Upload Files
-          </button>
+          </Link>
         </div>
 
         {/* Search Bar */}
@@ -94,77 +557,355 @@ export default function Dashboard() {
             className="material-symbols-rounded absolute left-4 top-1/2 -translate-y-1/2 text-navy opacity-50"
             title="Search icon"
           >
-            search
+            {isSearching ? 'hourglass_empty' : 'search'}
           </span>
         </div>
 
-        {/* Recent Files Section */}
-        <section className="bg-white rounded-lg shadow-xl p-6">
-          <h2 className="text-2xl font-bold text-navy mb-4">Recent Files</h2>
-          {recentFiles.length === 0 ? (
-            <div className="text-center">
-              <div className="grid grid-cols-3 gap-2 mb-4 max-w-lg mx-auto">
-                <span 
-                  className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]"
-                  title="Store and view presentations"
-                >
-                  slideshow
-                </span>
-                <span 
-                  className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]"
-                  title="Store and view documents"
-                >
-                  description
-                </span>
-                <span 
-                  className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]"
-                  title="Store and view PDFs"
-                >
-                  picture_as_pdf
-                </span>
-                <span 
-                  className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]"
-                  title="Store and view images"
-                >
-                  image
-                </span>
-                <span 
-                  className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]"
-                  title="Organize files in folders"
-                >
-                  folder
-                </span>
-                <span 
-                  className="material-symbols-rounded text-navy opacity-20 w-24 h-24 flex items-center justify-center !text-[100px]"
-                  title="Store and view articles"
-                >
-                  article
-                </span>
-              </div>
-              <h3 className="text-2xl font-bold text-navy mb-4">
-                Upload files to store for DocStorage to display
-              </h3>
-              <Link 
-                href="/files"
-                className="inline-block bg-navy text-white px-6 py-2 rounded-lg hover:bg-opacity-90 transition-all"
-                title="View all your stored files"
+        {searchError && (
+          <div className="mb-6 p-4 bg-red-100 text-red-700 rounded-lg">
+            {searchError}
+          </div>
+        )}
+
+        {/* Files Grid */}
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex items-center gap-2">
+            <h2 className="text-2xl font-bold text-[#002B5B]">
+              {searchQuery ? 'Search Results' : 'Recent Files'}
+            </h2>
+            {!searchQuery && (
+              <button 
+                onClick={() => setSectionsCollapsed(prev => ({
+                  ...prev,
+                  recent: !prev.recent
+                }))}
+                className="text-navy hover:text-gold transition-colors"
+                title={sectionsCollapsed.recent ? "Expand section" : "Collapse section"}
               >
-                View All Files
-              </Link>
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 gap-6">
-              {recentFiles.slice(0, 6).map((file) => (
-                <div key={file.id} className="p-4 border border-navy rounded-lg">
-                  <h4 className="font-bold">{file.name}</h4>
-                  <p className="text-sm">{file.uploaded_at}</p>
-                </div>
-              ))}
-            </div>
+                <span className="material-symbols-rounded">
+                  {sectionsCollapsed.recent ? 'expand_more' : 'expand_less'}
+                </span>
+              </button>
+            )}
+          </div>
+          {!searchQuery && (
+            <Link
+              href="/files"
+              className="bg-[#002B5B] hover:bg-[#1B4B7D] text-white font-medium py-2 px-4 rounded"
+            >
+              View All Files
+            </Link>
           )}
-        </section>
+        </div>
+        
+        {!sectionsCollapsed.recent && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+            {/* Show either search results or recent files */}
+            {(searchQuery ? searchResults : recentFiles).map((file) => (
+              <div 
+                key={file.doc_id} 
+                className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
+                onClick={() => handlePreview(file.doc_id, false, file.original_filename)}
+              >
+                <div className="mb-2">
+                  {file.file_type.startsWith('image/') ? (
+                    <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
+                      {imageUrls[file.doc_id] ? (
+                        <img 
+                          src={imageUrls[file.doc_id]}
+                          alt={file.original_filename}
+                          className="w-full h-40 object-cover rounded"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            const parent = target.parentElement;
+                            if (parent) {
+                              const icon = document.createElement('span');
+                              icon.className = 'material-symbols-rounded text-navy text-4xl';
+                              icon.textContent = getFileIcon(file.original_filename);
+                              parent.appendChild(icon);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <span className="material-symbols-rounded text-navy text-4xl animate-pulse">
+                          hourglass_empty
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                      <span className="material-symbols-rounded text-navy text-4xl">
+                        {getFileIcon(file.original_filename)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <h4 className="font-bold text-navy truncate">{file.original_filename}</h4>
+                <div className="flex justify-between items-center mt-2">
+                  <p className="text-sm text-gray-600">
+                    {new Date(file.upload_date).toLocaleDateString()}
+                  </p>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShareModalOpen(file.doc_id);
+                    }}
+                    className="text-navy hover:text-gold transition-colors"
+                    title="Share this document"
+                  >
+                    <span className="material-symbols-rounded">share</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+            
+            {/* Only show upload placeholders for recent files view */}
+            {!searchQuery && Array.from({ length: Math.max(0, 6 - recentFiles.length) }).map((_, index) => (
+              <Link
+                key={`empty-${index}`}
+                href="/uploadFiles"
+                className="p-4 border-2 border-dashed border-navy rounded-lg hover:border-gold transition-colors cursor-pointer flex flex-col"
+              >
+                <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                  <span className="material-symbols-rounded text-navy text-4xl">
+                    add_circle
+                  </span>
+                </div>
+                <h4 className="font-bold text-navy text-center">Upload More Files</h4>
+                <p className="text-sm text-gray-600 mt-auto text-center">
+                  Click to add files
+                </p>
+              </Link>
+            ))}
+          </div>
+        )}
+
+        {/* Shared with Me Section */}
+        {!searchQuery && (
+          <>
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-2">
+                <h2 className="text-2xl font-bold text-[#002B5B]">Shared with Me</h2>
+                <button 
+                  onClick={() => setSectionsCollapsed(prev => ({
+                    ...prev,
+                    shared: !prev.shared
+                  }))}
+                  className="text-navy hover:text-gold transition-colors"
+                >
+                  <span className="material-symbols-rounded">
+                    {sectionsCollapsed.shared ? 'expand_more' : 'expand_less'}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {!sectionsCollapsed.shared && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+                {sharedWithMeFiles.map((share) => (
+                  <div 
+                    key={share.share_id} 
+                    className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
+                    onClick={() => handlePreview(share.doc_id, true, share.filename)}
+                  >
+                    <div className="mb-2">
+                      {share.file_type?.startsWith('image/') ? (
+                        <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
+                          {imageUrls[share.doc_id] ? (
+                            <img 
+                              src={imageUrls[share.doc_id]}
+                              alt={share.filename}
+                              className="w-full h-40 object-cover rounded"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                                const parent = target.parentElement;
+                                if (parent) {
+                                  const icon = document.createElement('span');
+                                  icon.className = 'material-symbols-rounded text-navy text-4xl';
+                                  icon.textContent = getFileIcon(share.filename);
+                                  parent.appendChild(icon);
+                                }
+                              }}
+                            />
+                          ) : (
+                            <span className="material-symbols-rounded text-navy text-4xl">
+                              {getFileIcon(share.filename)}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                          <span className="material-symbols-rounded text-navy text-4xl">
+                            {getFileIcon(share.filename)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <h4 className="font-bold text-navy truncate">{share.filename}</h4>
+                    <div className="flex justify-between items-center mt-2">
+                      <p className="text-sm text-gray-600">
+                        {new Date(share.shared_date).toLocaleDateString()}
+                      </p>
+                      <p className="text-sm text-navy">
+                        Shared by: {share.owner_id}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                {sharedWithMeFiles.length === 0 && (
+                  <div className="col-span-3 p-8 text-center text-gray-500">
+                    No files have been shared with you yet.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Shared by Me Section */}
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-2">
+                <h2 className="text-2xl font-bold text-[#002B5B]">Shared by Me</h2>
+                <button 
+                  onClick={() => setSectionsCollapsed(prev => ({
+                    ...prev,
+                    sharedByMe: !prev.sharedByMe
+                  }))}
+                  className="text-navy hover:text-gold transition-colors"
+                >
+                  <span className="material-symbols-rounded">
+                    {sectionsCollapsed.sharedByMe ? 'expand_more' : 'expand_less'}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {!sectionsCollapsed.sharedByMe && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {sharedByMeFiles.map((share) => {
+                  console.log('Share data:', share);
+                  
+                  // Try to get the filename in order of preference
+                  const filename = share.original_filename || share.display_name || share.filename || `Document ${share.doc_id}`;
+                  
+                  // Check if it's an image file
+                  const isImage = filename.match(/\.(jpg|jpeg|png|gif|bmp)$/i) !== null;
+                  
+                  return (
+                    <div 
+                      key={share.share_id} 
+                      className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
+                      onClick={() => handlePreview(share.doc_id, false, filename)}
+                    >
+                      <div className="mb-2">
+                        <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                          {isImage ? (
+                            <span className="material-symbols-rounded text-navy text-4xl">
+                              image
+                            </span>
+                          ) : (
+                            <span className="material-symbols-rounded text-navy text-4xl">
+                              {getFileIcon(filename)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <h4 className="font-bold text-navy truncate">{filename}</h4>
+                      <div className="flex justify-between items-center mt-2">
+                        <p className="text-sm text-gray-600">
+                          {new Date(share.shared_date).toLocaleDateString()}
+                        </p>
+                        <span className="text-sm text-navy">
+                          Shared with: {share.shared_with}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {sharedByMeFiles.length === 0 && (
+                  <div className="col-span-3 p-8 text-center text-gray-500">
+                    You haven't shared any files yet.
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
       </main>
       <Footer />
+
+      {/* Preview Modal - Lower z-index */}
+      {previewData && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40"
+          onClick={() => {
+            if (previewData.type !== 'text') {
+              URL.revokeObjectURL(previewData.url);
+            }
+            setPreviewData(null);
+          }}
+        >
+          <div 
+            className="bg-white rounded-lg p-4 max-w-4xl max-h-[90vh] w-full mx-4 overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold truncate">{previewData.filename}</h3>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShareModalOpen(previewData.docId);
+                  }}
+                  className="text-gray-500 hover:text-navy transition-colors"
+                  title="Share this document"
+                >
+                  <span className="material-symbols-rounded">share</span>
+                </button>
+                <button 
+                  onClick={() => {
+                    if (previewData.type !== 'text') {
+                      URL.revokeObjectURL(previewData.url);
+                    }
+                    setPreviewData(null);
+                  }}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <span className="material-symbols-rounded">close</span>
+                </button>
+              </div>
+            </div>
+            <div className="overflow-auto max-h-[calc(90vh-8rem)]">
+              {previewData.type === 'image' ? (
+                <img 
+                  src={previewData.url} 
+                  alt={previewData.filename}
+                  className="max-w-full h-auto"
+                />
+              ) : previewData.type === 'pdf' ? (
+                <iframe
+                  src={previewData.url}
+                  className="w-full h-[80vh]"
+                  title={previewData.filename}
+                />
+              ) : previewData.type === 'text' ? (
+                <pre className="whitespace-pre-wrap font-mono p-4 bg-gray-50 rounded">
+                  {previewData.url}
+                </pre>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Share Modal - Higher z-index */}
+      {shareModalOpen > -1 && (
+        <ShareModal
+          onClose={() => setShareModalOpen(-1)}
+          selectedFiles={[shareModalOpen]}
+          isBulkShare={false}
+        />
+      )}
     </div>
   );
 }

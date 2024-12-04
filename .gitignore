@@ -1,5 +1,5 @@
 # Ignore DocStorage Documents
-DocStorageDocuments
+ignorefile
 
 # Venv
 venv 
@@ -13,3 +13,12 @@ venv
 
 #ignore test account
 usertxt.txt
+
+#ignore todo list
+todotxt.txt
+
+#ignore DocStorage
+DocStorageDocuments/
+
+#ignore login_databases.sh
+login_databases.sh  
