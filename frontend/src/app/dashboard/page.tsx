@@ -177,39 +177,32 @@ export default function Dashboard() {
     const fetchSharedFiles = async () => {
       try {
         const token = localStorage.getItem('token');
-        if (!token) {
-            console.error('No token found in localStorage');
-            return;
+        const userData = localStorage.getItem('user');
+        if (!token || !userData) {
+          console.error('No token or user data found');
+          return;
         }
-        
-        try {
-            const payload = JSON.parse(atob(token.split('.')[1]));
-            console.log('Decoded token payload:', payload);
-        } catch (e) {
-            console.error('Error decoding token:', e);
-        }
-        
+
+        const user = JSON.parse(userData);
+
         // Fetch files shared with me
-        const withMeResponse = await fetch('http://127.0.0.1:5000/share/shared-with-me', {
+        const withMeResponse = await fetch(`http://127.0.0.1:5000/share/shared-with-me?recipient_id=${user.user_id}`, {
           headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
+            'Authorization': `Bearer ${token}`
           },
           credentials: 'include'
         });
-        
+
         // Fetch files shared by me
-        const byMeResponse = await fetch('http://127.0.0.1:5000/share/shared-by-me', {
+        const byMeResponse = await fetch(`http://127.0.0.1:5000/share/shared-by-me?owner_id=${user.user_id}`, {
           headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
+            'Authorization': `Bearer ${token}`
           },
           credentials: 'include'
         });
 
         if (!withMeResponse.ok || !byMeResponse.ok) {
-          console.error('Error fetching shared files');
-          return;
+          throw new Error('Failed to fetch shared files');
         }
 
         const withMeData = await withMeResponse.json();
@@ -218,40 +211,9 @@ export default function Dashboard() {
         console.log('Shared with me:', withMeData);
         console.log('Shared by me:', byMeData);
 
-        // Verify each file exists before adding to state
-        const verifiedWithMe = [];
-        const verifiedByMe = [];
+        setSharedWithMeFiles(withMeData.shares || []);
+        setSharedByMeFiles(byMeData.shares || []);
 
-        for (const share of withMeData.shares || []) {
-          try {
-            const verifyResponse = await fetch(`http://127.0.0.1:5000/docs/file/${share.doc_id}`, {
-              headers: { 'Authorization': `Bearer ${token}` },
-              credentials: 'include'
-            });
-            if (verifyResponse.ok) {
-              verifiedWithMe.push(share);
-            }
-          } catch (error) {
-            console.error(`Error verifying shared file ${share.doc_id}:`, error);
-          }
-        }
-
-        for (const share of byMeData.shares || []) {
-          try {
-            const verifyResponse = await fetch(`http://127.0.0.1:5000/docs/file/${share.doc_id}`, {
-              headers: { 'Authorization': `Bearer ${token}` },
-              credentials: 'include'
-            });
-            if (verifyResponse.ok) {
-              verifiedByMe.push(share);
-            }
-          } catch (error) {
-            console.error(`Error verifying shared file ${share.doc_id}:`, error);
-          }
-        }
-
-        setSharedWithMeFiles(verifiedWithMe);
-        setSharedByMeFiles(verifiedByMe);
       } catch (error) {
         console.error('Error fetching shared files:', error);
       }
@@ -268,13 +230,20 @@ export default function Dashboard() {
     router.push('/');
   };
 
-  const fetchThumbnail = async (fileId: number): Promise<string> => {
+  const fetchThumbnail = async (docId: number, isShared: boolean = false) => {
     try {
-      const response = await fetch(`http://127.0.0.1:5000/docs/file/${fileId}/thumbnail`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+      const token = localStorage.getItem('token');
+      const response = await fetch(
+        isShared 
+          ? `http://127.0.0.1:5000/share/thumbnail/${docId}`
+          : `http://127.0.0.1:5000/docs/file/${docId}/thumbnail`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          credentials: 'include'
         }
-      });
+      );
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -284,7 +253,6 @@ export default function Dashboard() {
       return URL.createObjectURL(blob);
     } catch (error) {
       console.error('Error fetching thumbnail:', error);
-      // Return a placeholder image URL or null
       return '/placeholder-image.png';
     }
   };
@@ -293,9 +261,10 @@ export default function Dashboard() {
     const loadImages = async () => {
       const newImageUrls: { [key: number]: string } = {};
       
+      // Load thumbnails for recent files
       for (const file of recentFiles) {
         try {
-          const thumbnailUrl = await fetchThumbnail(file.doc_id);
+          const thumbnailUrl = await fetchThumbnail(file.doc_id, false);
           if (thumbnailUrl) {
             newImageUrls[file.doc_id] = thumbnailUrl;
           }
@@ -304,17 +273,29 @@ export default function Dashboard() {
         }
       }
       
+      // Load thumbnails for shared files
+      for (const file of sharedWithMeFiles) {
+        try {
+          const thumbnailUrl = await fetchThumbnail(file.doc_id, true);
+          if (thumbnailUrl) {
+            newImageUrls[file.doc_id] = thumbnailUrl;
+          }
+        } catch (error) {
+          console.error(`Error loading thumbnail for shared file ${file.doc_id}:`, error);
+        }
+      }
+      
       setImageUrls(newImageUrls);
     };
 
-    if (recentFiles.length > 0) {
+    if (recentFiles.length > 0 || sharedWithMeFiles.length > 0) {
       loadImages();
     }
 
     return () => {
       Object.values(imageUrls).forEach(url => URL.revokeObjectURL(url));
     };
-  }, [recentFiles]);
+  }, [recentFiles, sharedWithMeFiles]);
 
   // Add debounced search
   useEffect(() => {
@@ -380,7 +361,7 @@ export default function Dashboard() {
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
 
-  const handlePreview = async (docId: number) => {
+  const handlePreview = async (docId: number, isSharedWithMe: boolean = false, filename: string) => {
     try {
       const token = localStorage.getItem('token');
       if (!token) {
@@ -388,13 +369,12 @@ export default function Dashboard() {
         return;
       }
 
-      // Find the file object that matches this docId
-      const file = [...recentFiles, ...searchResults, ...sharedWithMeFiles, ...sharedByMeFiles]
-        .find(f => f.doc_id === docId);
-      
-      const filename = file?.original_filename || file?.filename || `Document ${docId}`;
+      // Choose the appropriate endpoint based on whether it's a shared file or not
+      const endpoint = isSharedWithMe 
+        ? `http://127.0.0.1:5000/share/preview/${docId}`
+        : `http://127.0.0.1:5000/docs/preview/${docId}`;
 
-      const response = await fetch(`http://127.0.0.1:5000/docs/preview/${docId}`, {
+      const response = await fetch(endpoint, {
         headers: {
           'Authorization': `Bearer ${token}`
         },
@@ -408,19 +388,18 @@ export default function Dashboard() {
       const contentType = response.headers.get('Content-Type') || '';
       const data = await response.blob();
 
-      // Create preview data based on content type
       if (contentType.startsWith('image/')) {
         setPreviewData({
           type: 'image',
           url: URL.createObjectURL(data),
-          filename: filename,
+          filename: filename,  // Use the passed filename
           docId: docId
         });
       } else if (contentType === 'application/pdf') {
         setPreviewData({
           type: 'pdf',
           url: URL.createObjectURL(data),
-          filename: filename,
+          filename: filename,  // Use the passed filename
           docId: docId
         });
       } else {
@@ -555,7 +534,7 @@ export default function Dashboard() {
               <div 
                 key={file.doc_id} 
                 className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
-                onClick={() => handlePreview(file.doc_id)}
+                onClick={() => handlePreview(file.doc_id, false, file.original_filename)}
               >
                 <div className="mb-2">
                   {file.file_type.startsWith('image/') ? (
@@ -657,22 +636,50 @@ export default function Dashboard() {
                   <div 
                     key={share.share_id} 
                     className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
-                    onClick={() => handlePreview(share.doc_id)}
+                    onClick={() => handlePreview(share.doc_id, true, share.filename)}
                   >
-                    {/* File preview/icon */}
-                    <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
-                      <span className="material-symbols-rounded text-navy text-4xl">
-                        {getFileIcon(share.filename)}
-                      </span>
+                    <div className="mb-2">
+                      {share.file_type?.startsWith('image/') ? (
+                        <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
+                          {imageUrls[share.doc_id] ? (
+                            <img 
+                              src={imageUrls[share.doc_id]}
+                              alt={share.filename}
+                              className="w-full h-40 object-cover rounded"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                                const parent = target.parentElement;
+                                if (parent) {
+                                  const icon = document.createElement('span');
+                                  icon.className = 'material-symbols-rounded text-navy text-4xl';
+                                  icon.textContent = getFileIcon(share.filename);
+                                  parent.appendChild(icon);
+                                }
+                              }}
+                            />
+                          ) : (
+                            <span className="material-symbols-rounded text-navy text-4xl">
+                              {getFileIcon(share.filename)}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                          <span className="material-symbols-rounded text-navy text-4xl">
+                            {getFileIcon(share.filename)}
+                          </span>
+                        </div>
+                      )}
                     </div>
                     <h4 className="font-bold text-navy truncate">{share.filename}</h4>
                     <div className="flex justify-between items-center mt-2">
                       <p className="text-sm text-gray-600">
-                        {new Date(share.created_at).toLocaleDateString()}
+                        {new Date(share.shared_date).toLocaleDateString()}
                       </p>
-                      <span className="text-sm text-navy">
+                      <p className="text-sm text-navy">
                         Shared by: {share.owner_id}
-                      </span>
+                      </p>
                     </div>
                   </div>
                 ))}
@@ -713,7 +720,7 @@ export default function Dashboard() {
                     <div 
                       key={share.share_id} 
                       className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
-                      onClick={() => handlePreview(share.doc_id)}
+                      onClick={() => handlePreview(share.doc_id, false, filename)}
                     >
                       {/* File preview/icon */}
                       <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">

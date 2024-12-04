@@ -898,5 +898,39 @@ def lookup_user():
         print(f"Gateway error in lookup_user: {str(e)}")
         return jsonify({'error': 'Auth service unavailable'}), 503
 
+@app.route('/share/preview/<doc_id>', methods=['GET', 'OPTIONS'])
+def preview_shared_document(doc_id):
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        # Forward to share service
+        service_url = SERVICES['share']
+        target_url = f"{service_url}/share/preview/{doc_id}"
+        
+        response = requests.get(
+            target_url,
+            headers=get_forwarded_headers(request)
+        )
+        
+        return Response(
+            response.content,
+            status=response.status_code,
+            headers={
+                'Content-Type': response.headers.get('Content-Type', 'application/octet-stream'),
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error in preview_shared_document: {str(e)}")
+        return jsonify({'error': 'Share service unavailable'}), 503
+
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000)
