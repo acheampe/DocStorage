@@ -13,6 +13,24 @@ interface File {
   file_type: string;
 }
 
+interface SharedFile {
+  share_id: number;
+  doc_id: number;
+  original_filename: string;
+  display_name: string;
+  filename?: string;
+  shared_date: string;
+  shared_with: string;
+  file_type?: string;
+}
+
+interface PreviewData {
+  type: 'image' | 'pdf' | 'text';
+  url: string;
+  filename: string;
+  docId: number;
+}
+
 export default function Files() {
   const router = useRouter();
   const [files, setFiles] = useState<File[]>([]);
@@ -20,17 +38,15 @@ export default function Files() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingFile, setEditingFile] = useState<{ id: number; name: string } | null>(null);
-  const [previewData, setPreviewData] = useState<{
-    type: string;
-    url: string;
-    filename: string;
-  } | null>(null);
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<File[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState<number>(-1);
   const [imageUrls, setImageUrls] = useState<{ [key: number]: string }>({});
+  const [sharedWithMeFiles, setSharedWithMeFiles] = useState<SharedFile[]>([]);
+  const [activeTab, setActiveTab] = useState<'my-files' | 'shared'>('my-files');
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -40,6 +56,7 @@ export default function Files() {
     }
 
     fetchAllFiles();
+    fetchSharedFiles();
   }, [router]);
 
   useEffect(() => {
@@ -125,6 +142,38 @@ export default function Files() {
     } catch (error) {
       console.error('Error fetching files:', error);
       setIsLoading(false);
+    }
+  };
+
+  const fetchSharedFiles = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const userData = localStorage.getItem('user');
+      if (!token || !userData) {
+        console.error('No token or user data found');
+        return;
+      }
+
+      const user = JSON.parse(userData);
+
+      // Fetch files shared with me
+      const withMeResponse = await fetch(`http://127.0.0.1:5000/share/shared-with-me?recipient_id=${user.user_id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        credentials: 'include'
+      });
+
+      if (!withMeResponse.ok) {
+        throw new Error('Failed to fetch shared files');
+      }
+
+      const withMeData = await withMeResponse.json();
+      console.log('Shared with me:', withMeData);
+      setSharedWithMeFiles(withMeData.shares || []);
+
+    } catch (error) {
+      console.error('Error fetching shared files:', error);
     }
   };
 
@@ -266,45 +315,130 @@ export default function Files() {
     }
   };
 
-  const handlePreview = async (file: File) => {
+  const handlePreview = async (docId: number, isSharedWithMe: boolean = false, filename: string) => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
+      if (!token) {
+        console.error('No token found');
+        return;
+      }
+
+      // Get file extension
+      const fileExt = filename.split('.').pop()?.toLowerCase();
+      
+      // Define previewable types
+      const previewableTypes = {
+        image: ['jpg', 'jpeg', 'png', 'gif', 'bmp'],
+        pdf: ['pdf'],
+        text: ['txt', 'md', 'csv']
+      };
+
+      // Check if file is previewable
+      const isPreviewable = Object.values(previewableTypes)
+        .flat()
+        .includes(fileExt || '');
+
+      // Use share endpoints for both "Shared with Me" and "Shared by Me" sections
+      const isSharedSection = isSharedWithMe || window.location.hash === '#shared-by-me';
+      
+      // For non-previewable files, ask for download first
+      if (!isPreviewable) {
+        const userConfirmed = window.confirm(
+          `"${filename}" cannot be previewed in the browser. Would you like to download it instead?`
+        );
+        
+        if (!userConfirmed) return;
+
+        const downloadEndpoint = isSharedSection
+          ? `http://127.0.0.1:5000/share/preview/${docId}`
+          : `http://127.0.0.1:5000/docs/file/${docId}`;
+
+        const downloadResponse = await fetch(downloadEndpoint, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': '*/*'
+          },
+          credentials: 'include'
+        });
+
+        if (!downloadResponse.ok) {
+          throw new Error(`Download failed: ${downloadResponse.status} ${downloadResponse.statusText}`);
         }
-      });
 
-      if (!response.ok) throw new Error('Failed to fetch file');
-
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-
-      // Set preview data based on file type
-      if (file.file_type.startsWith('image/')) {
-        setPreviewData({
-          type: 'image',
-          url,
-          filename: file.original_filename
-        });
-      } else if (file.file_type === 'application/pdf') {
-        setPreviewData({
-          type: 'pdf',
-          url,
-          filename: file.original_filename
-        });
-      } else {
-        // For other file types, trigger download instead
+        const blob = await downloadResponse.blob();
+        const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = file.original_filename;
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
+        window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        return;
+      }
+
+      // For previewable files, use the appropriate endpoint
+      const endpoint = isSharedSection
+        ? `http://127.0.0.1:5000/share/preview/${docId}`
+        : `http://127.0.0.1:5000/docs/file/${docId}`;
+
+      const response = await fetch(endpoint, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': '*/*'
+        },
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        throw new Error(`File access failed: ${response.status} ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get('Content-Type') || '';
+      const data = await response.blob();
+
+      if (contentType.startsWith('image/')) {
+        setPreviewData({
+          type: 'image',
+          url: URL.createObjectURL(data),
+          filename: filename,
+          docId: docId
+        });
+      } else if (contentType === 'application/pdf') {
+        setPreviewData({
+          type: 'pdf',
+          url: URL.createObjectURL(data),
+          filename: filename,
+          docId: docId
+        });
+      } else if (contentType.startsWith('text/')) {
+        const text = await data.text();
+        setPreviewData({
+          type: 'text',
+          url: text,
+          filename: filename,
+          docId: docId
+        });
+      } else {
+        const userConfirmed = window.confirm(
+          `"${filename}" cannot be previewed in the browser. Would you like to download it instead?`
+        );
+        
+        if (userConfirmed) {
+          const url = window.URL.createObjectURL(data);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+        }
       }
     } catch (error) {
-      console.error('Error previewing file:', error);
+      console.error('Error handling file:', error);
+      alert(`Error handling file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setPreviewData(null);
     }
   };
 
@@ -423,7 +557,7 @@ export default function Files() {
                   Download Selected
                 </button>
                 <button
-                  onClick={() => setShareModalOpen(selectedFiles[0])}
+                  onClick={() => setShareModalOpen(-2)}
                   className="px-6 py-2 bg-gold text-white rounded-lg hover:bg-opacity-90 transition-all"
                   title="Share selected files"
                 >
@@ -431,6 +565,29 @@ export default function Files() {
                 </button>
               </>
             )}
+          </div>
+
+          <div className="flex gap-4 mt-4">
+            <button
+              onClick={() => setActiveTab('my-files')}
+              className={`px-4 py-2 rounded-lg ${
+                activeTab === 'my-files' 
+                  ? 'bg-navy text-white' 
+                  : 'text-navy hover:bg-gray-100'
+              }`}
+            >
+              My Files
+            </button>
+            <button
+              onClick={() => setActiveTab('shared')}
+              className={`px-4 py-2 rounded-lg ${
+                activeTab === 'shared' 
+                  ? 'bg-navy text-white' 
+                  : 'text-navy hover:bg-gray-100'
+              }`}
+            >
+              Shared with Me
+            </button>
           </div>
         </div>
       </div>
@@ -442,91 +599,157 @@ export default function Files() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {(searchQuery ? searchResults : files).map((file) => (
-              <div
-                key={file.doc_id}
-                className={`p-4 border-2 rounded-lg cursor-pointer transition-colors relative ${
-                  selectedFiles.includes(file.doc_id)
-                    ? 'border-gold bg-yellow-50'
-                    : 'border-navy hover:border-gold'
-                }`}
-                onClick={() => handlePreview(file)}
-              >
-                <div className="flex items-center justify-between mb-2" onClick={e => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={selectedFiles.includes(file.doc_id)}
-                    onChange={() => handleFileSelect(file.doc_id)}
-                    className="h-5 w-5"
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShareModalOpen(file.doc_id);
-                      }}
-                      className="text-navy hover:text-gold"
-                      title="Share file"
-                    >
-                      <span className="material-symbols-rounded">share</span>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingFile({ 
-                          id: file.doc_id, 
-                          name: file.original_filename 
-                        });
-                      }}
-                      className="text-navy hover:text-gold"
-                      title="Rename file"
-                    >
-                      <span className="material-symbols-rounded">edit</span>
-                    </button>
+            {activeTab === 'my-files' ? (
+              // My Files content
+              (searchQuery ? searchResults : files).map((file) => (
+                <div
+                  key={file.doc_id}
+                  className={`p-4 border-2 rounded-lg cursor-pointer transition-colors relative ${
+                    selectedFiles.includes(file.doc_id)
+                      ? 'border-gold bg-yellow-50'
+                      : 'border-navy hover:border-gold'
+                  }`}
+                  onClick={() => handlePreview(file.doc_id, false, file.original_filename)}
+                >
+                  <div className="flex items-center justify-between mb-2" onClick={e => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedFiles.includes(file.doc_id)}
+                      onChange={() => handleFileSelect(file.doc_id)}
+                      className="h-5 w-5"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShareModalOpen(file.doc_id);
+                        }}
+                        className="text-navy hover:text-gold"
+                        title="Share file"
+                      >
+                        <span className="material-symbols-rounded">share</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingFile({ 
+                            id: file.doc_id, 
+                            name: file.original_filename 
+                          });
+                        }}
+                        className="text-navy hover:text-gold"
+                        title="Rename file"
+                      >
+                        <span className="material-symbols-rounded">edit</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mb-2">
+                    {file.file_type.startsWith('image/') ? (
+                      <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
+                        {imageUrls[file.doc_id] ? (
+                          <img 
+                            src={imageUrls[file.doc_id]}
+                            alt={file.original_filename}
+                            className="w-full h-40 object-cover rounded"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              const parent = target.parentElement;
+                              if (parent) {
+                                const icon = document.createElement('span');
+                                icon.className = 'material-symbols-rounded text-navy text-4xl';
+                                icon.textContent = getFileIcon(file.original_filename);
+                                parent.appendChild(icon);
+                              }
+                            }}
+                          />
+                        ) : (
+                          <span className="material-symbols-rounded text-navy text-4xl animate-pulse">
+                            hourglass_empty
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                        <span className="material-symbols-rounded text-navy text-4xl">
+                          {getFileIcon(file.original_filename)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="font-medium text-navy truncate">{file.original_filename}</p>
+                  <p className="text-sm text-gray-500">
+                    {new Date(file.upload_date).toLocaleDateString()}
+                  </p>
+                </div>
+              ))
+            ) : (
+              // Shared with Me content
+              Array.isArray(sharedWithMeFiles) ? sharedWithMeFiles.map((share) => (
+                <div
+                  key={share.share_id}
+                  className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
+                  onClick={() => handlePreview(
+                    share.doc_id,
+                    true,  // isSharedWithMe = true
+                    share.original_filename || share.display_name || share.filename
+                  )}
+                >
+                  <div className="mb-2">
+                    {share.file_type?.startsWith('image/') ? (
+                      <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
+                        {imageUrls[share.doc_id] ? (
+                          <img 
+                            src={imageUrls[share.doc_id]}
+                            alt={share.original_filename}
+                            className="w-full h-40 object-cover rounded"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              const parent = target.parentElement;
+                              if (parent) {
+                                const icon = document.createElement('span');
+                                icon.className = 'material-symbols-rounded text-navy text-4xl';
+                                icon.textContent = getFileIcon(share.original_filename);
+                                parent.appendChild(icon);
+                              }
+                            }}
+                          />
+                        ) : (
+                          <span className="material-symbols-rounded text-navy text-4xl">
+                            {getFileIcon(share.original_filename)}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                        <span className="material-symbols-rounded text-navy text-4xl">
+                          {getFileIcon(share.original_filename)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <h4 className="font-bold text-navy truncate">
+                    {share.original_filename}
+                  </h4>
+                  <div className="flex justify-between items-center mt-2">
+                    <p className="text-sm text-gray-600">
+                      {new Date(share.shared_date).toLocaleDateString()}
+                    </p>
+                    <p className="text-sm text-navy">
+                      Shared by: {share.owner_id}
+                    </p>
                   </div>
                 </div>
-
-                <div className="mb-2">
-                  {file.file_type.startsWith('image/') ? (
-                    <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
-                      {imageUrls[file.doc_id] ? (
-                        <img 
-                          src={imageUrls[file.doc_id]}
-                          alt={file.original_filename}
-                          className="w-full h-40 object-cover rounded"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = 'none';
-                            const parent = target.parentElement;
-                            if (parent) {
-                              const icon = document.createElement('span');
-                              icon.className = 'material-symbols-rounded text-navy text-4xl';
-                              icon.textContent = getFileIcon(file.original_filename);
-                              parent.appendChild(icon);
-                            }
-                          }}
-                        />
-                      ) : (
-                        <span className="material-symbols-rounded text-navy text-4xl animate-pulse">
-                          hourglass_empty
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
-                      <span className="material-symbols-rounded text-navy text-4xl">
-                        {getFileIcon(file.original_filename)}
-                      </span>
-                    </div>
-                  )}
+              )) : (
+                <div className="col-span-full text-center text-gray-500 py-8">
+                  No shared files found
                 </div>
-
-                <p className="font-medium text-navy truncate">{file.original_filename}</p>
-                <p className="text-sm text-gray-500">
-                  {new Date(file.upload_date).toLocaleDateString()}
-                </p>
-              </div>
-            ))}
+              )
+            )}
           </div>
         )}
       </div>
@@ -547,15 +770,13 @@ export default function Files() {
               <div className="flex items-center gap-2 flex-1 mr-4">
                 <h3 className="text-xl font-bold truncate">{previewData.filename}</h3>
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      const file = files.find(f => f.original_filename === previewData.filename);
-                      if (file) {
-                        setShareModalOpen(file.doc_id);
-                      }
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShareModalOpen(previewData.docId);  // Use docId directly from previewData
                     }}
-                    className="text-navy hover:text-gold"
-                    title="Share file"
+                    className="text-gray-500 hover:text-navy transition-colors"
+                    title="Share this document"
                   >
                     <span className="material-symbols-rounded">share</span>
                   </button>
@@ -599,6 +820,10 @@ export default function Files() {
                   className="w-full h-[80vh]"
                   title={previewData.filename}
                 />
+              ) : previewData.type === 'text' ? (
+                <pre className="whitespace-pre-wrap font-mono p-4 bg-gray-50 rounded">
+                  {previewData.url}
+                </pre>
               ) : null}
             </div>
           </div>
@@ -642,11 +867,9 @@ export default function Files() {
 
       {shareModalOpen !== -1 && (
         <ShareModal
-          docId={shareModalOpen}
           onClose={() => setShareModalOpen(-1)}
-          className="z-50"
-          isBulkShare={selectedFiles.length > 1}
-          selectedCount={selectedFiles.length}
+          selectedFiles={shareModalOpen === -2 ? selectedFiles : [shareModalOpen]}  // Handle both single and bulk
+          isBulkShare={shareModalOpen === -2}  // Use -2 to indicate bulk sharing
         />
       )}
     </div>

@@ -62,41 +62,38 @@ export default function ShareModal({ onClose, isBulkShare, selectedFiles, select
 
       const recipientId = await lookupUserByEmail(email);
 
-      const payload = {
-        doc_id: selectedFiles[0],
-        recipient_id: recipientId
-      };
-      console.log('Share Request Payload:', payload);
+      const sharePromises = selectedFiles.map(docId => {
+        const payload = {
+          doc_id: docId,
+          recipient_id: recipientId
+        };
+        console.log('Share Request Payload:', payload);
 
-      const response = await fetch('http://127.0.0.1:5000/share', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        credentials: 'include',
-        body: JSON.stringify(payload)
+        return fetch('http://127.0.0.1:5000/share', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          credentials: 'include',
+          body: JSON.stringify(payload)
+        });
       });
 
-      if (!response.ok) {
-        let errorMessage = 'Failed to share file';
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
-        } catch (e) {
-          errorMessage = response.statusText || errorMessage;
-        }
-        throw new Error(errorMessage);
+      const responses = await Promise.all(sharePromises);
+      
+      const failedResponses = responses.filter(response => !response.ok);
+      if (failedResponses.length > 0) {
+        throw new Error(`Failed to share ${failedResponses.length} files`);
       }
 
-      const data = await response.json();
-      setSuccessMessage('File shared successfully!');
+      setSuccessMessage(`${selectedFiles.length} ${selectedFiles.length === 1 ? 'file' : 'files'} shared successfully!`);
       setTimeout(() => {
         onClose();
       }, 2000);
     } catch (error) {
       console.error('Share error:', error);
-      setError(error instanceof Error ? error.message : 'Failed to share file');
+      setError(error instanceof Error ? error.message : 'Failed to share files');
     } finally {
       setIsLoading(false);
       setIsValidatingEmail(false);

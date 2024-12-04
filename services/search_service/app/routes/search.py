@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify
 from ..models.document_index import DocumentIndex
+from ..models.shared_documents import SharedDocuments
 from .. import db
 import traceback
 
@@ -52,23 +53,27 @@ def index_document():
 def search_documents():
     try:
         query = request.args.get('q', '').strip()
-        print(f"Search service received query: {query}")  # Debug log
-        
-        # Check if we have any documents indexed
-        total_docs = DocumentIndex.query.count()
-        print(f"Total indexed documents: {total_docs}")  # Debug log
-        
-        results = DocumentIndex.search(query)
-        print(f"Search results: {results}")  # Debug log
-        
+        user_id = request.args.get('user_id', type=int)
+        print(f"Search service received query: {query} for user: {user_id}")
+
+        # Search owned documents
+        owned_results = DocumentIndex.search(query).filter_by(owner_id=user_id).all()
+
+        # Search shared documents
+        shared_results = DocumentIndex.query.join(SharedDocuments, DocumentIndex.doc_id == SharedDocuments.doc_id)\
+            .filter((SharedDocuments.owner_id == user_id) | (SharedDocuments.recipient_id == user_id))\
+            .filter(DocumentIndex.search_vector.match(query)).all()
+
+        results = owned_results + shared_results
+        print(f"Search results: {results}")
+
         return jsonify({
-            'results': results,
+            'results': [result.to_dict() for result in results],
             'debug_info': {
                 'query': query,
-                'total_indexed': total_docs
+                'total_indexed': len(results)
             }
         })
-        
     except Exception as e:
         print(f"Search error: {str(e)}")
         print(f"Traceback: {traceback.format_exc()}")
