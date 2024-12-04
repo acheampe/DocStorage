@@ -557,7 +557,7 @@ export default function Files() {
                   Download Selected
                 </button>
                 <button
-                  onClick={() => setShareModalOpen(selectedFiles[0])}
+                  onClick={() => setShareModalOpen(-2)}
                   className="px-6 py-2 bg-gold text-white rounded-lg hover:bg-opacity-90 transition-all"
                   title="Share selected files"
                 >
@@ -770,15 +770,13 @@ export default function Files() {
               <div className="flex items-center gap-2 flex-1 mr-4">
                 <h3 className="text-xl font-bold truncate">{previewData.filename}</h3>
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      const file = files.find(f => f.original_filename === previewData.filename);
-                      if (file) {
-                        setShareModalOpen(file.doc_id);
-                      }
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShareModalOpen(previewData.docId);  // Use docId directly from previewData
                     }}
-                    className="text-navy hover:text-gold"
-                    title="Share file"
+                    className="text-gray-500 hover:text-navy transition-colors"
+                    title="Share this document"
                   >
                     <span className="material-symbols-rounded">share</span>
                   </button>
@@ -869,11 +867,9 @@ export default function Files() {
 
       {shareModalOpen !== -1 && (
         <ShareModal
-          docId={shareModalOpen}
           onClose={() => setShareModalOpen(-1)}
-          className="z-50"
-          isBulkShare={selectedFiles.length > 1}
-          selectedCount={selectedFiles.length}
+          selectedFiles={shareModalOpen === -2 ? selectedFiles : [shareModalOpen]}  // Handle both single and bulk
+          isBulkShare={shareModalOpen === -2}  // Use -2 to indicate bulk sharing
         />
       )}
     </div>
