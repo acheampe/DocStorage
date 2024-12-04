@@ -311,8 +311,15 @@ export default function Dashboard() {
 
       try {
         const token = localStorage.getItem('token');
+        const userData = localStorage.getItem('user');
+        const user = userData ? JSON.parse(userData) : null;
+
+        if (!user?.user_id) {
+          throw new Error('User ID not found');
+        }
+
         const response = await fetch(
-          `http://127.0.0.1:5000/search?q=${encodeURIComponent(searchQuery)}`,
+          `http://127.0.0.1:5000/search?q=${encodeURIComponent(searchQuery)}&user_id=${user.user_id}`,
           {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -327,28 +334,14 @@ export default function Dashboard() {
         }
 
         const data = await response.json();
-        
-        // Verify each search result exists before adding to results
-        const verifiedResults = [];
-        for (const result of data.results) {
-          const verifyResponse = await fetch(`http://127.0.0.1:5000/docs/file/${result.doc_id}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            },
-            credentials: 'include'
-          });
-          
-          if (verifyResponse.ok) {
-            verifiedResults.push({
-              doc_id: result.doc_id,
-              original_filename: result.metadata.filename,
-              upload_date: result.metadata.upload_date,
-              file_type: result.metadata.file_type
-            });
-          }
-        }
-        
-        setSearchResults(verifiedResults);
+        setSearchResults(data.results.map((result: any) => ({
+          doc_id: result.doc_id,
+          original_filename: result.metadata.filename,
+          upload_date: result.metadata.upload_date,
+          file_type: result.metadata.file_type,
+          shared_by: result.metadata.owner_id,
+          shared_with: result.metadata.recipient_id
+        })));
       } catch (error) {
         console.error('Error searching documents:', error);
         setSearchError('Failed to search documents');
