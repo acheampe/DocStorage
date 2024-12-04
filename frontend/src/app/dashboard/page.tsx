@@ -30,12 +30,12 @@ interface PreviewData {
 interface SharedFile {
   share_id: number;
   doc_id: number;
-  filename: string;
+  original_filename: string;
+  display_name: string;
+  filename?: string;
   shared_date: string;
-  shared_with: string;  // email of recipient
-  mime_type: string;
-  file_size: number;
-  thumbnail_url?: string;
+  shared_with: string;
+  file_type?: string;
 }
 
 function getFileIcon(filename: string | undefined): string {
@@ -369,20 +369,77 @@ export default function Dashboard() {
         return;
       }
 
-      // Choose the appropriate endpoint based on whether it's a shared file or not
-      const endpoint = isSharedWithMe 
-        ? `http://127.0.0.1:5000/share/preview/${docId}`
-        : `http://127.0.0.1:5000/docs/preview/${docId}`;
+      // Get file extension
+      const fileExt = filename.split('.').pop()?.toLowerCase();
+      
+      // Define previewable types
+      const previewableTypes = {
+        image: ['jpg', 'jpeg', 'png', 'gif', 'bmp'],
+        pdf: ['pdf'],
+        text: ['txt', 'md', 'csv']
+      };
+
+      // Check if file is previewable
+      const isPreviewable = Object.values(previewableTypes)
+        .flat()
+        .includes(fileExt || '');
+
+      // Use share endpoints for both "Shared with Me" and "Shared by Me" sections
+      const isSharedSection = isSharedWithMe || window.location.hash === '#shared-by-me';
+      
+      // For non-previewable files, ask for download first
+      if (!isPreviewable) {
+        const userConfirmed = window.confirm(
+          `"${filename}" cannot be previewed in the browser. Would you like to download it instead?`
+        );
+        
+        if (!userConfirmed) {
+          return;
+        }
+
+        const downloadEndpoint = isSharedSection
+          ? `http://127.0.0.1:5000/share/preview/${docId}`  // Use preview endpoint for shared files
+          : `http://127.0.0.1:5000/docs/file/${docId}`;     // Use file endpoint for regular docs
+
+        const downloadResponse = await fetch(downloadEndpoint, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': '*/*'
+          },
+          credentials: 'include'
+        });
+
+        if (!downloadResponse.ok) {
+          throw new Error(`Download failed: ${downloadResponse.status} ${downloadResponse.statusText}`);
+        }
+
+        const blob = await downloadResponse.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        return;
+      }
+
+      // For previewable files, use the appropriate endpoint
+      const endpoint = isSharedSection
+        ? `http://127.0.0.1:5000/share/preview/${docId}`  // Use preview endpoint for shared files
+        : `http://127.0.0.1:5000/docs/file/${docId}`;     // Use file endpoint for regular docs
 
       const response = await fetch(endpoint, {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'Accept': '*/*'
         },
         credentials: 'include'
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`File access failed: ${response.status} ${response.statusText}`);
       }
 
       const contentType = response.headers.get('Content-Type') || '';
@@ -392,22 +449,43 @@ export default function Dashboard() {
         setPreviewData({
           type: 'image',
           url: URL.createObjectURL(data),
-          filename: filename,  // Use the passed filename
+          filename: filename,
           docId: docId
         });
       } else if (contentType === 'application/pdf') {
         setPreviewData({
           type: 'pdf',
           url: URL.createObjectURL(data),
-          filename: filename,  // Use the passed filename
+          filename: filename,
+          docId: docId
+        });
+      } else if (contentType.startsWith('text/')) {
+        const text = await data.text();
+        setPreviewData({
+          type: 'text',
+          url: text,
+          filename: filename,
           docId: docId
         });
       } else {
-        console.log('Unsupported preview type:', contentType);
-        setPreviewData(null);
+        const userConfirmed = window.confirm(
+          `"${filename}" cannot be previewed in the browser. Would you like to download it instead?`
+        );
+        
+        if (userConfirmed) {
+          const url = window.URL.createObjectURL(data);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+        }
       }
     } catch (error) {
-      console.error('Error previewing file:', error);
+      console.error('Error handling file:', error);
+      alert(`Error handling file: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setPreviewData(null);
     }
   };
@@ -712,29 +790,34 @@ export default function Dashboard() {
             {!sectionsCollapsed.sharedByMe && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {sharedByMeFiles.map((share) => {
-                  // Find the matching file object from recentFiles
-                  const file = recentFiles.find(f => f.doc_id === share.doc_id);
-                  const filename = file?.original_filename || share.filename || `Document ${share.doc_id}`;
-
+                  console.log('Share data:', share);
+                  
+                  // Try to get the filename in order of preference
+                  const filename = share.original_filename || share.display_name || share.filename || `Document ${share.doc_id}`;
+                  
+                  // Check if it's an image file
+                  const isImage = filename.match(/\.(jpg|jpeg|png|gif|bmp)$/i) !== null;
+                  
                   return (
                     <div 
                       key={share.share_id} 
                       className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
                       onClick={() => handlePreview(share.doc_id, false, filename)}
                     >
-                      {/* File preview/icon */}
-                      <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
-                        <span className="material-symbols-rounded text-navy text-4xl">
-                          {getFileIcon(filename)}
-                        </span>
+                      <div className="mb-2">
+                        <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                          {isImage ? (
+                            <span className="material-symbols-rounded text-navy text-4xl">
+                              image
+                            </span>
+                          ) : (
+                            <span className="material-symbols-rounded text-navy text-4xl">
+                              {getFileIcon(filename)}
+                            </span>
+                          )}
+                        </div>
                       </div>
-
-                      {/* File name */}
-                      <h4 className="font-bold text-navy truncate mb-2">
-                        {filename}
-                      </h4>
-                      
-                      {/* Share details */}
+                      <h4 className="font-bold text-navy truncate">{filename}</h4>
                       <div className="flex justify-between items-center mt-2">
                         <p className="text-sm text-gray-600">
                           {new Date(share.shared_date).toLocaleDateString()}
@@ -763,7 +846,9 @@ export default function Dashboard() {
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40"
           onClick={() => {
-            URL.revokeObjectURL(previewData.url);
+            if (previewData.type !== 'text') {
+              URL.revokeObjectURL(previewData.url);
+            }
             setPreviewData(null);
           }}
         >
@@ -786,7 +871,9 @@ export default function Dashboard() {
                 </button>
                 <button 
                   onClick={() => {
-                    URL.revokeObjectURL(previewData.url);
+                    if (previewData.type !== 'text') {
+                      URL.revokeObjectURL(previewData.url);
+                    }
                     setPreviewData(null);
                   }}
                   className="text-gray-500 hover:text-gray-700"
@@ -808,6 +895,10 @@ export default function Dashboard() {
                   className="w-full h-[80vh]"
                   title={previewData.filename}
                 />
+              ) : previewData.type === 'text' ? (
+                <pre className="whitespace-pre-wrap font-mono p-4 bg-gray-50 rounded">
+                  {previewData.url}
+                </pre>
               ) : null}
             </div>
           </div>
