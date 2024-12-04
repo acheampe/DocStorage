@@ -30,12 +30,12 @@ interface PreviewData {
 interface SharedFile {
   share_id: number;
   doc_id: number;
-  filename: string;
+  original_filename: string;
+  display_name: string;
+  filename?: string;
   shared_date: string;
-  shared_with: string;  // email of recipient
-  mime_type: string;
-  file_size: number;
-  thumbnail_url?: string;
+  shared_with: string;
+  file_type?: string;
 }
 
 function getFileIcon(filename: string | undefined): string {
@@ -790,56 +790,34 @@ export default function Dashboard() {
             {!sectionsCollapsed.sharedByMe && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {sharedByMeFiles.map((share) => {
-                  // Find the matching file object from recentFiles
-                  const file = recentFiles.find(f => f.doc_id === share.doc_id);
-                  const filename = file?.original_filename || share.filename || `Document ${share.doc_id}`;
-
+                  console.log('Share data:', share);
+                  
+                  // Try to get the filename in order of preference
+                  const filename = share.original_filename || share.display_name || share.filename || `Document ${share.doc_id}`;
+                  
+                  // Check if it's an image file
+                  const isImage = filename.match(/\.(jpg|jpeg|png|gif|bmp)$/i) !== null;
+                  
                   return (
                     <div 
                       key={share.share_id} 
                       className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
                       onClick={() => handlePreview(share.doc_id, false, filename)}
                     >
-                      {/* File preview/icon */}
-                      <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
-                        {file?.file_type?.startsWith('image/') ? (
-                          <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
-                            {imageUrls[share.doc_id] ? (
-                              <img 
-                                src={imageUrls[share.doc_id]}
-                                alt={filename}
-                                className="w-full h-40 object-cover rounded"
-                                onError={(e) => {
-                                  const target = e.target as HTMLImageElement;
-                                  target.style.display = 'none';
-                                  const parent = target.parentElement;
-                                  if (parent) {
-                                    const icon = document.createElement('span');
-                                    icon.className = 'material-symbols-rounded text-navy text-4xl';
-                                    icon.textContent = getFileIcon(filename);
-                                    parent.appendChild(icon);
-                                  }
-                                }}
-                              />
-                            ) : (
-                              <span className="material-symbols-rounded text-navy text-4xl">
-                                {getFileIcon(filename)}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="material-symbols-rounded text-navy text-4xl">
-                            {getFileIcon(filename)}
-                          </span>
-                        )}
+                      <div className="mb-2">
+                        <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                          {isImage ? (
+                            <span className="material-symbols-rounded text-navy text-4xl">
+                              image
+                            </span>
+                          ) : (
+                            <span className="material-symbols-rounded text-navy text-4xl">
+                              {getFileIcon(filename)}
+                            </span>
+                          )}
+                        </div>
                       </div>
-
-                      {/* File name */}
-                      <h4 className="font-bold text-navy truncate mb-2">
-                        {filename}
-                      </h4>
-                      
-                      {/* Share details */}
+                      <h4 className="font-bold text-navy truncate">{filename}</h4>
                       <div className="flex justify-between items-center mt-2">
                         <p className="text-sm text-gray-600">
                           {new Date(share.shared_date).toLocaleDateString()}
