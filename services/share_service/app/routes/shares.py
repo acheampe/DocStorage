@@ -9,6 +9,11 @@ import os
 import requests
 import traceback
 from sqlalchemy import text
+from pathlib import Path
+import shutil
+
+# Get storage path from environment variable, with a default fallback
+STORAGE_PATH = os.getenv('STORAGE_PATH', 'DocStorageDocuments')
 
 @share_bp.route('/share', methods=['POST'])
 @require_auth
@@ -17,16 +22,33 @@ def create_share(current_user):
         print("Share Service: Starting share creation...")
         
         data = request.get_json()
-        print(f"Share Service: Received raw request data: {request.get_data()}")
         print(f"Share Service: Parsed JSON data: {data}")
-        print(f"Share Service: Current user: {current_user}")
         
         # Validate required fields
-        required_fields = ['doc_id', 'recipient_id']
+        required_fields = ['doc_id', 'recipient_id', 'document_metadata']
         for field in required_fields:
             if field not in data:
-                print(f"Share Service: Missing required field: {field}")
                 return jsonify({'error': f'Missing required field: {field}'}), 400
+        
+        # Use document metadata from the request
+        doc_metadata = data['document_metadata']
+        original_filename = doc_metadata.get('original_filename', f"Document {data['doc_id']}")
+        source_path = f"../../DocStorageDocuments/{doc_metadata['file_path']}"
+        
+        # Create shared file path using environment variable
+        shared_file_path = f"../../DocStorageDocuments/shared/{current_user['user_id']}/{data['recipient_id']}/{data['doc_id']}_{original_filename}"
+        
+        # Ensure the directory structure exists
+        shared_dir = os.path.dirname(shared_file_path)
+        Path(shared_dir).mkdir(parents=True, exist_ok=True)
+        
+        # Copy the file
+        try:
+            shutil.copy2(source_path, shared_file_path)
+            print(f"Share Service: File copied from {source_path} to {shared_file_path}")
+        except Exception as copy_error:
+            print(f"Share Service: Error copying file: {str(copy_error)}")
+            return jsonify({'error': f'File copy failed: {str(copy_error)}'}), 500
         
         try:
             # Create share with application context
@@ -35,8 +57,9 @@ def create_share(current_user):
                     doc_id=data['doc_id'],
                     owner_id=current_user['user_id'],
                     recipient_id=data['recipient_id'],
-                    display_name=data.get('display_name', f"Document {data['doc_id']}"),
-                    original_name=data.get('original_name', f"Document {data['doc_id']}"),
+                    display_name=data.get('display_name', original_filename),
+                    original_filename=original_filename,
+                    file_path=shared_file_path,
                     expiry_date=data.get('expiry_date'),
                     status='active'
                 )

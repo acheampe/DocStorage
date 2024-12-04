@@ -17,7 +17,8 @@ CREATE TABLE SharedDocuments (
     shared_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_accessed TIMESTAMP,
     expiry_date TIMESTAMP,              -- Optional expiration date for sharing
-    status VARCHAR(20) NOT NULL DEFAULT 'active'  -- active, revoked, expired
+    status VARCHAR(20) NOT NULL DEFAULT 'active',  -- active, revoked, expired
+    file_path VARCHAR(255) NOT NULL
 );
 
 -- Add indexes for faster queries

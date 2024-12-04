@@ -1,4 +1,13 @@
 from app import create_app, db
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Add these debug lines before creating the app
+print("Debug: Current environment variables:")
+print(f"STORAGE_PATH = {os.getenv('STORAGE_PATH')}")
+print(f"Current working directory = {os.getcwd()}")
 
 app = create_app()
 
