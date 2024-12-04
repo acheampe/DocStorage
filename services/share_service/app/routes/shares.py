@@ -10,6 +10,7 @@ import requests
 import traceback
 from sqlalchemy import text
 from pathlib import Path
+import shutil
 
 # Get storage path from environment variable, with a default fallback
 STORAGE_PATH = os.getenv('STORAGE_PATH', 'DocStorageDocuments')
@@ -32,13 +33,22 @@ def create_share(current_user):
         # Use document metadata from the request
         doc_metadata = data['document_metadata']
         original_filename = doc_metadata.get('original_filename', f"Document {data['doc_id']}")
+        source_path = f"../../DocStorageDocuments/{doc_metadata['file_path']}"
         
         # Create shared file path using environment variable
-        shared_file_path = f"{STORAGE_PATH}/shared/{current_user['user_id']}/{data['recipient_id']}/{data['doc_id']}_{original_filename}"
+        shared_file_path = f"../../DocStorageDocuments/shared/{current_user['user_id']}/{data['recipient_id']}/{data['doc_id']}_{original_filename}"
         
         # Ensure the directory structure exists
         shared_dir = os.path.dirname(shared_file_path)
         Path(shared_dir).mkdir(parents=True, exist_ok=True)
+        
+        # Copy the file
+        try:
+            shutil.copy2(source_path, shared_file_path)
+            print(f"Share Service: File copied from {source_path} to {shared_file_path}")
+        except Exception as copy_error:
+            print(f"Share Service: Error copying file: {str(copy_error)}")
+            return jsonify({'error': f'File copy failed: {str(copy_error)}'}), 500
         
         try:
             # Create share with application context
