@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
 
+interface User {
+  user_id: number;
+  first_name: string;
+  last_name: string;
+  email: string;
+}
+
 interface ShareModalProps {
   onClose: () => void;
-  isBulkShare?: boolean;
-  selectedFiles?: number[];
-  selectedCount?: number;
-  infoMessage?: React.ReactNode;
+  selectedFiles: number[];
+  onSuccess?: () => void;
 }
 
 interface UserLookupResponse {
@@ -13,90 +18,130 @@ interface UserLookupResponse {
   email: string;
 }
 
-export default function ShareModal({ onClose, isBulkShare, selectedFiles, selectedCount, infoMessage }: ShareModalProps) {
-  const [email, setEmail] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+export default function ShareModal({ onClose, selectedFiles, onSuccess }: ShareModalProps) {
+  const [selectedUser, setSelectedUser] = useState<number | null>(null);
+  const [email, setEmail] = useState<string>('');
+  const [users, setUsers] = useState<User[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [isValidatingEmail, setIsValidatingEmail] = useState(false);
 
   const lookupUserByEmail = async (email: string): Promise<number> => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      throw new Error('Not authenticated');
-    }
-
-    const response = await fetch(`http://127.0.0.1:5000/users/lookup?email=${encodeURIComponent(email)}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
+    setIsValidatingEmail(true);
+    try {
+      const token = localStorage.getItem('token');
+      console.log('Debug - Token:', token ? token.substring(0, 20) + '...' : 'Missing');
+      
+      if (!token) {
+        throw new Error('No authentication token found');
       }
-    });
 
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new Error('User not found. Please ensure the recipient has a DocStorage account.');
+      const response = await fetch(
+        `http://127.0.0.1:5000/auth/users/lookup?email=${encodeURIComponent(email)}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include'
+        }
+      );
+
+      console.log('Debug - Response status:', response.status);
+      const responseText = await response.text();
+      console.log('Debug - Response body:', responseText);
+
+      if (!response.ok) {
+        throw new Error(`Failed to validate recipient: ${response.status} ${response.statusText}`);
       }
-      throw new Error('Failed to validate recipient');
-    }
 
-    const userData: UserLookupResponse = await response.json();
-    return userData.user_id;
+      const data = JSON.parse(responseText);
+      if (!data.user_id) {
+        throw new Error('User not found');
+      }
+
+      setSelectedUser(data.user_id);
+      return data.user_id;
+    } catch (error) {
+      console.error('Lookup error:', error);
+      throw error;
+    } finally {
+      setIsValidatingEmail(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
-    setSuccessMessage(null);
-    setIsValidatingEmail(true);
-
+    
     try {
-      if (!selectedFiles?.length) {
-        throw new Error('No file selected');
-      }
-
+      const recipientId = await lookupUserByEmail(email);
       const token = localStorage.getItem('token');
       if (!token) {
-        throw new Error('Not authenticated');
+        throw new Error('No authentication token found');
       }
 
-      const recipientId = await lookupUserByEmail(email);
-
-      const sharePromises = selectedFiles.map(docId => {
-        const payload = {
-          doc_id: docId,
-          recipient_id: recipientId
-        };
-        console.log('Share Request Payload:', payload);
-
-        return fetch('http://127.0.0.1:5000/share', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          credentials: 'include',
-          body: JSON.stringify(payload)
-        });
+      // First, get the document metadata
+      const docId = selectedFiles[0]; // Assuming single file for now
+      const metadataResponse = await fetch(`http://127.0.0.1:5000/docs/file/${docId}/metadata`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'include'
       });
 
-      const responses = await Promise.all(sharePromises);
-      
-      const failedResponses = responses.filter(response => !response.ok);
-      if (failedResponses.length > 0) {
-        throw new Error(`Failed to share ${failedResponses.length} files`);
+      if (!metadataResponse.ok) {
+        throw new Error('Failed to fetch document metadata');
       }
 
-      setSuccessMessage(`${selectedFiles.length} ${selectedFiles.length === 1 ? 'file' : 'files'} shared successfully!`);
-      setTimeout(() => {
-        onClose();
-      }, 2000);
+      const documentMetadata = await metadataResponse.json();
+      console.log('Debug - Document metadata:', documentMetadata);
+
+      // Now create the share
+      const shareResponse = await fetch('http://127.0.0.1:5000/share', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          doc_id: docId,
+          recipient_id: recipientId,
+          document_metadata: {
+            original_filename: documentMetadata.original_filename,
+            file_path: documentMetadata.file_path,
+            file_type: documentMetadata.file_type
+          }
+        })
+      });
+
+      console.log('Debug - Share request payload:', JSON.stringify({
+        doc_id: docId,
+        recipient_id: recipientId,
+        document_metadata: documentMetadata
+      }, null, 2));
+
+      if (!shareResponse.ok) {
+        const errorData = await shareResponse.json();
+        throw new Error(errorData.error || 'Share request failed');
+      }
+
+      // Call onSuccess callback
+      if (onSuccess) {
+        onSuccess();
+      }
+      
+      // Close modal
+      onClose();
+
     } catch (error) {
       console.error('Share error:', error);
       setError(error instanceof Error ? error.message : 'Failed to share files');
     } finally {
       setIsLoading(false);
-      setIsValidatingEmail(false);
     }
   };
 
@@ -109,13 +154,15 @@ export default function ShareModal({ onClose, isBulkShare, selectedFiles, select
         onClick={e => e.stopPropagation()}
       >
         <h2 className="text-2xl font-bold text-navy mb-4">
-          {isBulkShare 
-            ? `Share ${selectedCount} Files`
-            : 'Share File'}
+          Share File
         </h2>
 
-        {infoMessage}
-        
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
+            {error}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit}>
           <div className="mb-6">
             <label className="block text-navy font-medium mb-2">
@@ -141,24 +188,6 @@ export default function ShareModal({ onClose, isBulkShare, selectedFiles, select
               <strong>Note:</strong> The recipient must have a DocStorage account to access shared files.
             </p>
           </div>
-
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
-              {error}
-            </div>
-          )}
-
-          {successMessage && (
-            <div className="mb-4 p-3 bg-green-50 text-green-700 rounded-lg text-sm">
-              {successMessage}
-            </div>
-          )}
-
-          {isValidatingEmail && (
-            <div className="mb-4 p-3 bg-blue-50 text-blue-700 rounded-lg text-sm">
-              Validating recipient email...
-            </div>
-          )}
 
           <div className="flex justify-end gap-4">
             <button

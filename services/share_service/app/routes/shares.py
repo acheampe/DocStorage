@@ -26,6 +26,21 @@ def create_share(current_user):
         data = request.get_json()
         print(f"Share Service: Parsed JSON data: {data}")
         
+        # Check if share already exists
+        existing_share = SharedDocument.query.filter_by(
+            doc_id=data['doc_id'],
+            owner_id=current_user['user_id'],
+            recipient_id=data['recipient_id'],
+            status='active'
+        ).first()
+        
+        if existing_share:
+            print("Share Service: Share already exists, returning existing share")
+            return jsonify({
+                'message': 'Document is already shared with this user',
+                'share': existing_share.to_dict()
+            }), 200
+        
         # Validate required fields
         required_fields = ['doc_id', 'recipient_id', 'document_metadata']
         for field in required_fields:
@@ -201,50 +216,47 @@ def health_check():
 def test_endpoint():
     return jsonify({'status': 'Share service is running'}), 200 
 
-@share_bp.route('/share/preview/<int:doc_id>', methods=['GET'])
+@share_bp.route('/share/preview/<int:share_id>/content', methods=['GET'])
 @require_auth
-def preview_shared_file(current_user, doc_id):
+def get_shared_content(current_user, share_id):
     try:
-        # First check if user is the owner of this shared file
-        owner_share = SharedDocument.query.filter_by(
-            doc_id=doc_id,
-            owner_id=current_user['user_id'],
-            status='active'
-        ).first()
+        print(f"Share Service: Accessing content for share_id {share_id} by user {current_user['user_id']}")
         
-        if owner_share:
-            # If user is owner, use the original file path
-            gateway_url = os.getenv('GATEWAY_URL', 'http://localhost:5000')
-            response = requests.get(
-                f"{gateway_url}/docs/preview/{doc_id}",
-                headers={'Authorization': request.headers.get('Authorization')}
-            )
-            
-            if response.status_code != 200:
-                return jsonify({'error': 'Failed to fetch file from docs service'}), response.status_code
-                
-            return response.content, response.status_code, response.headers.items()
-            
-        # If not owner, check if user is recipient
-        recipient_share = SharedDocument.query.filter_by(
-            doc_id=doc_id,
-            recipient_id=current_user['user_id'],
-            status='active'
-        ).first()
+        # Get the share record
+        share = SharedDocument.query.filter_by(
+            share_id=share_id,
+            status='active'  # Only allow access to active shares
+        ).first_or_404()
         
-        if not recipient_share:
-            print(f"No active share found for doc_id {doc_id} and user {current_user['user_id']}")
-            return jsonify({'error': 'File not found or no access'}), 404
+        print(f"Share Service: Found share record: owner_id={share.owner_id}, recipient_id={share.recipient_id}")
+        
+        # Check access rights
+        user_id = int(current_user['user_id'])  # Ensure integer comparison
+        has_access = (int(share.owner_id) == user_id or int(share.recipient_id) == user_id)
+        print(f"Share Service: User {user_id} access check: {has_access}")
+        print(f"Share Service: Types - user_id: {type(user_id)}, owner_id: {type(share.owner_id)}, recipient_id: {type(share.recipient_id)}")
+        
+        if not has_access:
+            print(f"Share Service: Access denied for user {user_id}")
+            return jsonify({
+                'error': 'Access denied',
+                'details': {
+                    'user_id': user_id,
+                    'owner_id': share.owner_id,
+                    'recipient_id': share.recipient_id,
+                    'share_id': share_id
+                }
+            }), 403
 
-        # Get the file path and resolve it properly
-        file_path = Path(recipient_share.file_path)
+        # Get the file path
+        file_path = Path(share.file_path)
         if not file_path.is_absolute():
-            file_path = STORAGE_PATH / 'shared' / str(recipient_share.owner_id) / str(recipient_share.recipient_id) / f"{doc_id}_{recipient_share.original_filename}"
+            file_path = STORAGE_PATH / str(share.owner_id) / str(share.recipient_id) / f"{share.doc_id}_{share.original_filename}"
         
-        print(f"Attempting to serve file from: {file_path}")
+        print(f"Share Service: Attempting to serve file from: {file_path}")
         
         if not file_path.exists():
-            print(f"File not found at path: {file_path}")
+            print(f"Share Service: File not found at path: {file_path}")
             return jsonify({'error': 'File not found'}), 404
 
         # Get the file's mime type
@@ -252,14 +264,52 @@ def preview_shared_file(current_user, doc_id):
         if not mime_type:
             mime_type = 'application/octet-stream'
 
+        print(f"Share Service: Serving file with mime type: {mime_type}")
         return send_file(
             file_path,
             mimetype=mime_type,
             as_attachment=False,
-            download_name=recipient_share.original_filename
+            download_name=share.original_filename
         )
 
     except Exception as e:
-        print(f"Error in preview_shared_file: {str(e)}")
+        print(f"Share Service Error: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@share_bp.route('/share/check-access/<int:doc_id>', methods=['GET'])
+@require_auth
+def check_file_access(current_user, doc_id):
+    try:
+        user_id = current_user['user_id']
+        print(f"Checking access for doc_id {doc_id} and user {user_id}")
+
+        # Check if user is either owner or recipient of the shared document
+        share = SharedDocument.query.filter(
+            SharedDocument.doc_id == doc_id,
+            SharedDocument.status == 'active',
+            db.or_(
+                SharedDocument.owner_id == user_id,
+                SharedDocument.recipient_id == user_id
+            )
+        ).first()
+
+        if not share:
+            print(f"No active share found for doc_id {doc_id} and user {user_id}")
+            return jsonify({
+                'error': 'Access denied',
+                'has_access': False
+            }), 403
+
+        # Return success with share details
+        return jsonify({
+            'has_access': True,
+            'access_type': 'owner' if share.owner_id == user_id else 'recipient',
+            'share_id': share.share_id,
+            'original_filename': share.original_filename
+        }), 200
+
+    except Exception as e:
+        print(f"Error checking file access: {str(e)}")
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500 
