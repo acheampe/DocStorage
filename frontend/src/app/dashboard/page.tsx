@@ -199,7 +199,7 @@ export default function Dashboard() {
           return;
         }
 
-        // Fetch files shared with me (using the correct endpoint)
+        // Fetch files shared with me
         const withMeResponse = await fetch('http://127.0.0.1:5000/share/shared-with-me', {
           headers: {
             'Authorization': `Bearer ${token}`
@@ -207,7 +207,7 @@ export default function Dashboard() {
           credentials: 'include'
         });
 
-        // Fetch files shared by me (using the correct endpoint)
+        // Fetch files shared by me
         const byMeResponse = await fetch('http://127.0.0.1:5000/share/shared-by-me', {
           headers: {
             'Authorization': `Bearer ${token}`
@@ -222,10 +222,7 @@ export default function Dashboard() {
         const withMeData = await withMeResponse.json();
         const byMeData = await byMeResponse.json();
 
-        console.log('Shared with me:', withMeData);
-        console.log('Shared by me:', byMeData);
-
-        // Update state with the fetched data
+        // Update state with the fetched data directly without verification
         setSharedWithMeFiles(withMeData.shares || []);
         setSharedByMeFiles(byMeData.shares || []);
 
@@ -245,12 +242,12 @@ export default function Dashboard() {
     router.push('/');
   };
 
-  const fetchThumbnail = async (docId: number, isShared: boolean = false) => {
+  const fetchThumbnail = async (docId: number, isShared: boolean = false, shareId?: number) => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
         isShared 
-          ? `http://127.0.0.1:5000/share/file/${docId}/thumbnail`
+          ? `http://127.0.0.1:5000/share/preview/${shareId}/thumbnail`
           : `http://127.0.0.1:5000/docs/file/${docId}/thumbnail`,
         {
           headers: {
@@ -371,14 +368,23 @@ export default function Dashboard() {
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
 
-  const handlePreview = async (docId: number, isSharedWithMe: boolean = false, filename: string) => {
+  const handlePreview = async (docId: number, isSharedWithMe: boolean = false, filename: string, shareId?: number) => {
     try {
+      console.log(`Previewing file: docId=${docId}, shareId=${shareId}, isSharedWithMe=${isSharedWithMe}`);
+      
       const token = localStorage.getItem('token');
       if (!token) {
         console.error('No token found');
         return;
       }
 
+      // Use share endpoints for shared files
+      const endpoint = isSharedWithMe
+        ? `http://127.0.0.1:5000/share/preview/${shareId}/content`
+        : `http://127.0.0.1:5000/docs/file/${docId}`;
+
+      console.log(`Using endpoint: ${endpoint}`);
+      
       // Get file extension
       const fileExt = filename.split('.').pop()?.toLowerCase();
       
@@ -389,25 +395,17 @@ export default function Dashboard() {
         text: ['txt', 'md', 'csv']
       };
 
-      // Check if file is previewable
       const isPreviewable = Object.values(previewableTypes)
         .flat()
         .includes(fileExt || '');
 
-      // Use appropriate endpoints based on whether the file is shared
-      const endpoint = isSharedWithMe 
-        ? `http://127.0.0.1:5000/share/preview/${docId}`
-        : `http://127.0.0.1:5000/docs/file/${docId}`;
-      
       // For non-previewable files, ask for download first
       if (!isPreviewable) {
         const userConfirmed = window.confirm(
           `"${filename}" cannot be previewed in the browser. Would you like to download it instead?`
         );
         
-        if (!userConfirmed) {
-          return;
-        }
+        if (!userConfirmed) return;
 
         const downloadResponse = await fetch(endpoint, {
           headers: {
@@ -433,7 +431,7 @@ export default function Dashboard() {
         return;
       }
 
-      // For previewable files, fetch and set preview data
+      // For previewable files
       const response = await fetch(endpoint, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -632,10 +630,10 @@ export default function Dashboard() {
           {activeTab === 'shared-with-me' && sharedWithMeFiles.map((file) => (
             // Shared with me files grid items
             <FileCard
-              key={file.doc_id}
+              key={file.share_id}
               file={file}
               imageUrl={imageUrls[file.doc_id]}
-              onPreview={() => handlePreview(file.doc_id, true, file.original_filename)}
+              onPreview={() => handlePreview(file.doc_id, true, file.original_filename, file.share_id)}
               isShared={true}
             />
           ))}
@@ -643,10 +641,10 @@ export default function Dashboard() {
           {activeTab === 'shared-by-me' && sharedByMeFiles.map((file) => (
             // Shared by me files grid items
             <FileCard
-              key={file.doc_id}
+              key={file.share_id}
               file={file}
               imageUrl={imageUrls[file.doc_id]}
-              onPreview={() => handlePreview(file.doc_id, false, file.original_filename)}
+              onPreview={() => handlePreview(file.doc_id, true, file.original_filename, file.share_id)}
               isShared={true}
             />
           ))}

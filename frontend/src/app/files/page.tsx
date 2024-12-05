@@ -739,9 +739,6 @@ export default function Files() {
                     <p className="text-sm text-gray-600">
                       {new Date(share.shared_date).toLocaleDateString()}
                     </p>
-                    <p className="text-sm text-navy">
-                      Shared by: {share.owner_id}
-                    </p>
                   </div>
                 </div>
               )) : (
@@ -867,9 +864,12 @@ export default function Files() {
 
       {shareModalOpen !== -1 && (
         <ShareModal
-          onClose={() => setShareModalOpen(-1)}
-          selectedFiles={shareModalOpen === -2 ? selectedFiles : [shareModalOpen]}  // Handle both single and bulk
-          isBulkShare={shareModalOpen === -2}  // Use -2 to indicate bulk sharing
+          onClose={() => {
+            setShareModalOpen(-1);
+            setSelectedFiles([]); // Clear selections after sharing
+          }}
+          selectedFiles={shareModalOpen === -2 ? selectedFiles : [shareModalOpen]}
+          isBulkShare={shareModalOpen === -2}
         />
       )}
     </div>

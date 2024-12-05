@@ -1009,5 +1009,78 @@ def get_shared_file_thumbnail(doc_id):
         print(f"Gateway error in get_shared_file_thumbnail: {str(e)}")
         return jsonify({'error': 'Service unavailable'}), 503
 
+# Add new routes for share preview and content
+@app.route('/share/preview/<int:share_id>/content', methods=['GET', 'OPTIONS'])
+def get_shared_content(share_id):
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        service_url = SERVICES['share']
+        target_url = f"{service_url}/share/preview/{share_id}/content"
+        
+        print(f"Gateway: Forwarding GET request to: {target_url}")
+        
+        response = requests.get(
+            target_url,
+            headers=get_forwarded_headers(request),
+            stream=True  # Important for file downloads
+        )
+        
+        if response.status_code != 200:
+            return make_response(response.content, response.status_code)
+
+        gateway_response = Response(
+            response.content,
+            status=200,
+            headers={
+                'Content-Type': response.headers.get('Content-Type', 'application/octet-stream'),
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
+        
+        return gateway_response
+
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error: {str(e)}")
+        return jsonify({'error': 'Share service unavailable'}), 503
+
+@app.route('/share/preview/<int:share_id>/thumbnail', methods=['GET', 'OPTIONS'])
+def get_shared_thumbnail(share_id):
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        service_url = SERVICES['share']
+        target_url = f"{service_url}/share/preview/{share_id}/thumbnail"
+        
+        response = requests.get(
+            target_url,
+            headers=get_forwarded_headers(request)
+        )
+        
+        gateway_response = make_response(response.content)
+        gateway_response.headers['Content-Type'] = response.headers.get('Content-Type', 'image/jpeg')
+        gateway_response.headers['Access-Control-Allow-Origin'] = 'http://localhost:3000'
+        gateway_response.headers['Access-Control-Allow-Credentials'] = 'true'
+        gateway_response.status_code = response.status_code
+        
+        return gateway_response
+
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error: {str(e)}")
+        return jsonify({'error': 'Share service unavailable'}), 503
+
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000)
