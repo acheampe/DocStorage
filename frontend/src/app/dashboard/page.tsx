@@ -541,16 +541,16 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <main className="flex-grow container mx-auto p-8">
+        {/* Welcome and Upload section */}
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-bold text-navy">
             Welcome, {user?.first_name}!
           </h1>
           <Link 
             href="/uploadFiles"
-            className="bg-gold text-white px-6 py-2 rounded-lg hover:bg-opacity-90 flex items-center gap-2"
+            className="bg-navy text-white px-6 py-2 rounded-lg hover:bg-opacity-90"
             title="Upload new documents to your storage"
           >
-            <span className="material-symbols-rounded">upload_file</span>
             Upload Files
           </Link>
         </div>
@@ -573,38 +573,41 @@ export default function Dashboard() {
           </span>
         </div>
 
-        {/* Tabs Navigation */}
-        <div className="flex gap-4 mb-6">
-          <button
-            onClick={() => setActiveTab('recent')}
-            className={`px-4 py-2 rounded-lg transition-colors ${
-              activeTab === 'recent' 
-                ? 'bg-navy text-white' 
-                : 'text-navy hover:bg-gray-100'
-            }`}
+        {/* Tabs and View All Files button container */}
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex gap-8">
+            <button
+              onClick={() => setActiveTab('recent')}
+              className={`text-lg font-semibold ${
+                activeTab === 'recent' ? 'text-navy border-b-2 border-navy' : 'text-gray-500'
+              }`}
+            >
+              Recent Files
+            </button>
+            <button
+              onClick={() => setActiveTab('shared-with-me')}
+              className={`text-lg font-semibold ${
+                activeTab === 'shared-with-me' ? 'text-navy border-b-2 border-navy' : 'text-gray-500'
+              }`}
+            >
+              Shared with Me
+            </button>
+            <button
+              onClick={() => setActiveTab('shared-by-me')}
+              className={`text-lg font-semibold ${
+                activeTab === 'shared-by-me' ? 'text-navy border-b-2 border-navy' : 'text-gray-500'
+              }`}
+            >
+              Shared by Me
+            </button>
+          </div>
+          
+          <Link
+            href="/files"
+            className="bg-[#002B5B] hover:bg-[#1B4B7D] text-white font-medium py-2 px-4 rounded transition-colors"
           >
-            Recent Files
-          </button>
-          <button
-            onClick={() => setActiveTab('shared-with-me')}
-            className={`px-4 py-2 rounded-lg transition-colors ${
-              activeTab === 'shared-with-me' 
-                ? 'bg-navy text-white' 
-                : 'text-navy hover:bg-gray-100'
-            }`}
-          >
-            Shared with Me
-          </button>
-          <button
-            onClick={() => setActiveTab('shared-by-me')}
-            className={`px-4 py-2 rounded-lg transition-colors ${
-              activeTab === 'shared-by-me' 
-                ? 'bg-navy text-white' 
-                : 'text-navy hover:bg-gray-100'
-            }`}
-          >
-            Shared by Me
-          </button>
+            View All Files
+          </Link>
         </div>
 
         {searchError && (
@@ -644,8 +647,7 @@ export default function Dashboard() {
               file={file}
               imageUrl={imageUrls[file.doc_id]}
               onPreview={() => handlePreview(file.doc_id, false, file.original_filename)}
-              onShare={() => setShareModalOpen(file.doc_id)}
-              isOwner={true}
+              isShared={true}
             />
           ))}
         </div>
@@ -681,6 +683,25 @@ interface FileCardProps {
 }
 
 function FileCard({ file, imageUrl, onPreview, onShare, isShared }: FileCardProps) {
+  // Helper function to format date
+  const formatDate = (dateString: string | undefined) => {
+    if (!dateString) return 'No date';
+    
+    // Try parsing the date string
+    const date = new Date(dateString);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      console.warn('Invalid date:', dateString);
+      return 'No date';
+    }
+    
+    return date.toLocaleDateString();
+  };
+
+  // Get the appropriate date field based on the file type
+  const displayDate = file.shared_date || file.upload_date;
+
   return (
     <div 
       className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
@@ -723,7 +744,7 @@ function FileCard({ file, imageUrl, onPreview, onShare, isShared }: FileCardProp
       <h4 className="font-bold text-navy truncate">{file.original_filename}</h4>
       <div className="flex justify-between items-center mt-2">
         <p className="text-sm text-gray-600">
-          {new Date(file.upload_date).toLocaleDateString()}
+          {formatDate(displayDate)}
         </p>
         {!isShared && onShare && (
           <button

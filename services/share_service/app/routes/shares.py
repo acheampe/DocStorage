@@ -204,6 +204,9 @@ def test_endpoint():
 @share_bp.route('/share/preview/<int:doc_id>', methods=['GET'])
 @require_auth
 def preview_shared_file(current_user, doc_id):
+    """
+    This endpoint is used to preview a shared file and to download a shared file.
+    """
     try:
         # First check if user is the owner of this shared file
         owner_share = SharedDocument.query.filter_by(
