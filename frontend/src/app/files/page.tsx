@@ -315,14 +315,23 @@ export default function Files() {
     }
   };
 
-  const handlePreview = async (docId: number, isSharedWithMe: boolean = false, filename: string) => {
+  const handlePreview = async (docId: number, isSharedWithMe: boolean = false, filename: string, shareId?: number) => {
     try {
+      console.log(`Previewing file: docId=${docId}, shareId=${shareId}, isSharedWithMe=${isSharedWithMe}`);
+      
       const token = localStorage.getItem('token');
       if (!token) {
         console.error('No token found');
         return;
       }
 
+      // Use share endpoints for shared files
+      const endpoint = isSharedWithMe
+        ? `http://127.0.0.1:5000/share/preview/${shareId}/content`
+        : `http://127.0.0.1:5000/docs/file/${docId}`;
+
+      console.log(`Using endpoint: ${endpoint}`);
+      
       // Get file extension
       const fileExt = filename.split('.').pop()?.toLowerCase();
       
@@ -338,9 +347,6 @@ export default function Files() {
         .flat()
         .includes(fileExt || '');
 
-      // Use share endpoints for both "Shared with Me" and "Shared by Me" sections
-      const isSharedSection = isSharedWithMe || window.location.hash === '#shared-by-me';
-      
       // For non-previewable files, ask for download first
       if (!isPreviewable) {
         const userConfirmed = window.confirm(
@@ -349,8 +355,8 @@ export default function Files() {
         
         if (!userConfirmed) return;
 
-        const downloadEndpoint = isSharedSection
-          ? `http://127.0.0.1:5000/share/preview/${docId}`
+        const downloadEndpoint = isSharedWithMe
+          ? `http://127.0.0.1:5000/share/preview/${shareId}`
           : `http://127.0.0.1:5000/docs/file/${docId}`;
 
         const downloadResponse = await fetch(downloadEndpoint, {
@@ -377,11 +383,7 @@ export default function Files() {
         return;
       }
 
-      // For previewable files, use the appropriate endpoint
-      const endpoint = isSharedSection
-        ? `http://127.0.0.1:5000/share/preview/${docId}`
-        : `http://127.0.0.1:5000/docs/file/${docId}`;
-
+      // For previewable files
       const response = await fetch(endpoint, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -437,7 +439,7 @@ export default function Files() {
       }
     } catch (error) {
       console.error('Error handling file:', error);
-      alert(`Error handling file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      alert(error instanceof Error ? error.message : 'Failed to handle file');
       setPreviewData(null);
     }
   };
@@ -636,19 +638,6 @@ export default function Files() {
                       >
                         <span className="material-symbols-rounded">share</span>
                       </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingFile({ 
-                            id: file.doc_id, 
-                            name: file.original_filename 
-                          });
-                        }}
-                        className="text-navy hover:text-gold"
-                        title="Rename file"
-                      >
-                        <span className="material-symbols-rounded">edit</span>
-                      </button>
                     </div>
                   </div>
 
@@ -702,7 +691,8 @@ export default function Files() {
                   onClick={() => handlePreview(
                     share.doc_id,
                     true,  // isSharedWithMe = true
-                    share.original_filename || share.display_name || share.filename
+                    share.original_filename || share.display_name || share.filename,
+                    share.share_id  // Pass the share_id
                   )}
                 >
                   <div className="mb-2">
@@ -783,21 +773,6 @@ export default function Files() {
                     title="Share this document"
                   >
                     <span className="material-symbols-rounded">share</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      const file = files.find(f => f.original_filename === previewData.filename);
-                      if (file) {
-                        setEditingFile({
-                          id: file.doc_id,
-                          name: file.original_filename
-                        });
-                      }
-                    }}
-                    className="text-navy hover:text-gold"
-                    title="Rename file"
-                  >
-                    <span className="material-symbols-rounded">edit</span>
                   </button>
                 </div>
               </div>
