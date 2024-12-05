@@ -83,50 +83,57 @@ export default function ShareModal({ onClose, selectedFiles, onSuccess }: ShareM
         throw new Error('No authentication token found');
       }
 
-      // First, get the document metadata
-      const docId = selectedFiles[0]; // Assuming single file for now
-      const metadataResponse = await fetch(`http://127.0.0.1:5000/docs/file/${docId}/metadata`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-        credentials: 'include'
-      });
+      // Filter out any invalid document IDs
+      const validDocIds = selectedFiles.filter(id => id > 0);
 
-      if (!metadataResponse.ok) {
-        throw new Error('Failed to fetch document metadata');
+      if (validDocIds.length === 0) {
+        throw new Error('No valid files selected for sharing');
       }
 
-      const documentMetadata = await metadataResponse.json();
-      console.log('Debug - Document metadata:', documentMetadata);
+      // Handle multiple files
+      for (const docId of validDocIds) {
+        try {
+          // Get metadata for each file
+          const metadataResponse = await fetch(`http://127.0.0.1:5000/docs/file/${docId}/metadata`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+            credentials: 'include'
+          });
 
-      // Now create the share
-      const shareResponse = await fetch('http://127.0.0.1:5000/share', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          doc_id: docId,
-          recipient_id: recipientId,
-          document_metadata: {
-            original_filename: documentMetadata.original_filename,
-            file_path: documentMetadata.file_path,
-            file_type: documentMetadata.file_type
+          if (!metadataResponse.ok) {
+            console.error(`Failed to fetch metadata for document ${docId}`);
+            continue; // Skip this file but continue with others
           }
-        })
-      });
 
-      console.log('Debug - Share request payload:', JSON.stringify({
-        doc_id: docId,
-        recipient_id: recipientId,
-        document_metadata: documentMetadata
-      }, null, 2));
+          const documentMetadata = await metadataResponse.json();
+          
+          // Create share for each file
+          const shareResponse = await fetch('http://127.0.0.1:5000/share', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+              doc_id: docId,
+              recipient_id: recipientId,
+              document_metadata: {
+                original_filename: documentMetadata.original_filename,
+                file_path: documentMetadata.file_path,
+                file_type: documentMetadata.file_type
+              }
+            })
+          });
 
-      if (!shareResponse.ok) {
-        const errorData = await shareResponse.json();
-        throw new Error(errorData.error || 'Share request failed');
+          if (!shareResponse.ok) {
+            const errorData = await shareResponse.json();
+            console.error(`Failed to share document ${docId}: ${errorData.error}`);
+          }
+        } catch (error) {
+          console.error(`Error processing document ${docId}:`, error);
+        }
       }
 
       // Call onSuccess callback

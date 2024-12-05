@@ -566,9 +566,13 @@ export default function Files() {
                   Download Selected
                 </button>
                 <button
-                  onClick={() => setShareModalOpen(-2)}
-                  className="px-6 py-2 bg-gold text-white rounded-lg hover:bg-opacity-90 transition-all"
-                  title="Share selected files"
+                  onClick={() => {
+                    if (selectedFiles.length > 0) {
+                      setShareModalOpen(-2); // Special value for bulk share
+                    }
+                  }}
+                  disabled={selectedFiles.length === 0}
+                  className="px-4 py-2 bg-navy text-white rounded-lg hover:bg-opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Share Selected
                 </button>
@@ -846,8 +850,11 @@ export default function Files() {
 
       {shareModalOpen !== -1 && (
         <ShareModal
-          onClose={() => setShareModalOpen(-1)}
-          selectedFiles={[shareModalOpen]}
+          onClose={() => {
+            setShareModalOpen(-1);
+            setSelectedFiles([]); // Clear selections after sharing
+          }}
+          selectedFiles={shareModalOpen === -2 ? selectedFiles : [shareModalOpen]}
           onSuccess={handleShareSuccess}
         />
       )}
