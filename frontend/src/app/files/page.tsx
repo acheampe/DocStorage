@@ -824,6 +824,21 @@ export default function Files() {
                   >
                     <span className="material-symbols-rounded">share</span>
                   </button>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const a = document.createElement('a');
+                      a.href = previewData.url;
+                      a.download = previewData.filename;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                    }}
+                    className="text-gray-500 hover:text-navy transition-colors"
+                    title="Download this document"
+                  >
+                    <span className="material-symbols-rounded">download</span>
+                  </button>
                 </div>
               </div>
               <button 

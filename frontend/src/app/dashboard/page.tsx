@@ -793,6 +793,20 @@ function PreviewModal({ previewData, onClose, onShare }: PreviewModalProps) {
                 <span className="material-symbols-rounded">share</span>
               </button>
             )}
+            <button 
+              onClick={() => {
+                const a = document.createElement('a');
+                a.href = previewData.url;
+                a.download = previewData.filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+              }}
+              className="text-navy hover:text-gold transition-colors"
+              title="Download this document"
+            >
+              <span className="material-symbols-rounded">download</span>
+            </button>
             <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
               <span className="material-symbols-rounded">close</span>
             </button>
