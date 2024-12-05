@@ -29,6 +29,7 @@ interface PreviewData {
   url: string;
   filename: string;
   docId: number;
+  isSharedWithMe: boolean;
 }
 
 export default function Files() {
@@ -332,7 +333,7 @@ export default function Files() {
     }
   };
 
-  const handlePreview = async (docId: number, isSharedWithMe: boolean = false, filename: string, shareId?: number) => {
+  const handlePreview = async (docId: number, isSharedWithMe: boolean, filename: string, shareId?: number) => {
     try {
       console.log(`Previewing file: docId=${docId}, shareId=${shareId}, isSharedWithMe=${isSharedWithMe}`);
       
@@ -373,7 +374,7 @@ export default function Files() {
         if (!userConfirmed) return;
 
         const downloadEndpoint = isSharedWithMe
-          ? `http://127.0.0.1:5000/share/preview/${shareId}`
+          ? `http://127.0.0.1:5000/share/preview/${shareId}/content`
           : `http://127.0.0.1:5000/docs/file/${docId}`;
 
         const downloadResponse = await fetch(downloadEndpoint, {
@@ -421,14 +422,16 @@ export default function Files() {
           type: 'image',
           url: URL.createObjectURL(data),
           filename: filename,
-          docId: docId
+          docId: docId,
+          isSharedWithMe: isSharedWithMe
         });
       } else if (contentType === 'application/pdf') {
         setPreviewData({
           type: 'pdf',
           url: URL.createObjectURL(data),
           filename: filename,
-          docId: docId
+          docId: docId,
+          isSharedWithMe: isSharedWithMe
         });
       } else if (contentType.startsWith('text/')) {
         const text = await data.text();
@@ -436,7 +439,8 @@ export default function Files() {
           type: 'text',
           url: text,
           filename: filename,
-          docId: docId
+          docId: docId,
+          isSharedWithMe: isSharedWithMe
         });
       } else {
         const userConfirmed = window.confirm(
@@ -589,7 +593,7 @@ export default function Files() {
                     }
                   }}
                   disabled={selectedFiles.length === 0}
-                  className="px-4 py-2 bg-navy text-white rounded-lg hover:bg-opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-gold text-white rounded-lg hover:bg-opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Share Selected
                 </button>
@@ -725,7 +729,7 @@ export default function Files() {
                   onClick={() => handlePreview(
                     share.doc_id,
                     true,  // isSharedWithMe = true
-                    share.original_filename || share.display_name || share.filename,
+                    share.original_filename || share.display_name || share.filename || 'Unknown Filename',
                     share.share_id  // Pass the share_id
                   )}
                 >
@@ -798,10 +802,22 @@ export default function Files() {
               <div className="flex items-center gap-2 flex-1 mr-4">
                 <h3 className="text-xl font-bold truncate">{previewData.filename}</h3>
                 <div className="flex gap-2">
+                  {!previewData.isSharedWithMe && (
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingFile({ id: previewData.docId, name: previewData.filename });
+                      }}
+                      className="text-gray-500 hover:text-navy transition-colors"
+                      title="Rename this document"
+                    >
+                      <span className="material-symbols-rounded">edit</span>
+                    </button>
+                  )}
                   <button 
                     onClick={(e) => {
                       e.stopPropagation();
-                      setShareModalOpen(previewData.docId);  // Use docId directly from previewData
+                      setShareModalOpen(previewData.docId);
                     }}
                     className="text-gray-500 hover:text-navy transition-colors"
                     title="Share this document"
