@@ -657,3 +657,69 @@ def get_file_metadata(doc_id):
     except Exception as e:
         print(f"Error retrieving document metadata: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
+
+@docs_bp.route('/docs/file/<int:doc_id>/rename', methods=['PUT', 'OPTIONS'])
+def rename_file(doc_id):
+    try:
+        # Validate request data
+        data = request.get_json()
+        if not data or 'new_filename' not in data:
+            return jsonify({'error': 'Missing required field: new_filename'}), 400
+
+        new_filename = data['new_filename']
+        
+        # Get the current file info
+        doc = Document.query.get_or_404(doc_id)
+        
+        # Generate new timestamped filename
+        file_extension = os.path.splitext(doc.filename)[1]
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        new_timestamped_filename = f"{os.path.splitext(new_filename)[0]}_{timestamp}{file_extension}"
+        
+        # Use user_id as the parent directory
+        new_file_path = os.path.join(str(doc.user_id), new_timestamped_filename)
+        
+        # Create full paths
+        old_path = os.path.join(UPLOAD_FOLDER, doc.file_path)
+        new_path = os.path.join(UPLOAD_FOLDER, new_file_path)
+        
+        print(f"Debug - Old path: {old_path}")
+        print(f"Debug - New path: {new_path}")
+        
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(new_path), exist_ok=True)
+        
+        # Rename the physical file
+        try:
+            os.rename(old_path, new_path)
+        except OSError as e:
+            print(f"File system error: {str(e)}")
+            return jsonify({'error': 'Failed to rename file on disk'}), 500
+        
+        # Update database
+        try:
+            doc.original_filename = new_filename
+            doc.filename = new_timestamped_filename
+            doc.file_path = new_file_path
+            doc.last_modified = datetime.utcnow()
+            db.session.commit()
+        except Exception as e:
+            # If database update fails, try to restore the file
+            try:
+                os.rename(new_path, old_path)
+            except OSError:
+                pass  # If restoration fails, we can't do much
+            print(f"Database error: {str(e)}")
+            return jsonify({'error': 'Failed to update database'}), 500
+        
+        return jsonify({
+            'message': 'File renamed successfully',
+            'new_filename': new_filename,
+            'new_file_path': new_file_path
+        })
+        
+    except Exception as e:
+        print(f"Error in rename_file: {str(e)}")
+        print("Traceback:", traceback.format_exc())
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500

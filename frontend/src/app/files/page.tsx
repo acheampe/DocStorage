@@ -279,39 +279,56 @@ export default function Files() {
 
   const handleRename = async () => {
     if (!editingFile) return;
-    
+
     try {
       const token = localStorage.getItem('token');
-      console.log('Attempting to rename file:', editingFile);
+      const newFilename = editingFile.name;
+      
+      // Get the timestamp and user directory from the existing file path
+      const timestamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0].replace('T', '_');
+      const userDir = `${localStorage.getItem('userId')}/`;
+      
+      // Construct the new filename with timestamp
+      const newTimestampedFilename = `${timestamp}_${newFilename}`;
+      // Construct the new file path
+      const newFilePath = `${userDir}${newTimestampedFilename}`;
 
-      const response = await fetch(`http://127.0.0.1:5000/docs/documents/${editingFile.id}`, {
-        method: 'PATCH',
+      const response = await fetch(`http://127.0.0.1:5000/docs/file/${editingFile.id}/rename`, {
+        method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ filename: editingFile.name })
+        body: JSON.stringify({
+          new_filename: newFilename,
+          new_timestamped_filename: newTimestampedFilename,
+          new_file_path: newFilePath
+        })
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Server error:', errorData);
         throw new Error('Failed to rename file');
       }
-      
-      const data = await response.json();
-      console.log('Success response:', data);
-      
-      // Refresh the file list after successful rename
-      await fetchAllFiles();
-      
+
+      // Update local state
+      setFiles(prevFiles => 
+        prevFiles.map(file => 
+          file.doc_id === editingFile.id 
+            ? { 
+                ...file, 
+                original_filename: newFilename,
+                filename: newTimestampedFilename,
+                file_path: newFilePath 
+              } 
+            : file
+        )
+      );
+
       setEditingFile(null);
       setSuccessMessage('File renamed successfully');
-      setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error) {
       console.error('Error renaming file:', error);
-      setSuccessMessage('Failed to rename file. Please try again.');
-      setTimeout(() => setSuccessMessage(null), 3000);
+      setError('Failed to rename file');
     }
   };
 
@@ -641,6 +658,19 @@ export default function Files() {
                         title="Share file"
                       >
                         <span className="material-symbols-rounded">share</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingFile({ 
+                            id: file.doc_id, 
+                            name: file.original_filename 
+                          });
+                        }}
+                        className="text-navy hover:text-gold"
+                        title="Rename file"
+                      >
+                        <span className="material-symbols-rounded">edit</span>
                       </button>
                     </div>
                   </div>

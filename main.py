@@ -125,13 +125,13 @@ def docs_service(path):
         print(f"Gateway error: {str(e)}")
         return jsonify({'error': 'Document service unavailable'}), 503
 
-@app.route('/docs/file/<path:path>', methods=['GET', 'OPTIONS'])
+@app.route('/docs/file/<path:path>', methods=['GET', 'PUT', 'OPTIONS'])
 def get_document(path):
     if request.method == 'OPTIONS':
         response = make_response()
         response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
         response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,OPTIONS')
         response.headers.add('Access-Control-Allow-Credentials', 'true')
         return response
 
@@ -144,22 +144,31 @@ def get_document(path):
         service_url = SERVICES['docs']
         target_url = f"{service_url}/docs/file/{path}"
         
-        response = requests.get(
-            target_url,
-            headers=get_forwarded_headers(request),
-            cookies=request.cookies,
-            stream=True
-        )
+        # Handle both GET and PUT requests
+        if request.method == 'GET':
+            response = requests.get(
+                target_url,
+                headers=get_forwarded_headers(request),
+                cookies=request.cookies,
+                stream=True
+            )
+        elif request.method == 'PUT':
+            response = requests.put(
+                target_url,
+                headers=get_forwarded_headers(request),
+                data=request.get_data(),
+                cookies=request.cookies
+            )
         
         return Response(
-            response.iter_content(chunk_size=8192),
+            response.iter_content(chunk_size=8192) if request.method == 'GET' else response.content,
             status=response.status_code,
             headers={
                 'Content-Type': response.headers.get('Content-Type', 'application/octet-stream'),
                 'Access-Control-Allow-Origin': 'http://localhost:3000',
                 'Access-Control-Allow-Credentials': 'true'
             },
-            direct_passthrough=True
+            direct_passthrough=request.method == 'GET'
         )
         
     except requests.exceptions.RequestException as e:
@@ -1081,6 +1090,41 @@ def get_shared_thumbnail(share_id):
     except requests.exceptions.RequestException as e:
         print(f"Gateway error: {str(e)}")
         return jsonify({'error': 'Share service unavailable'}), 503
+
+@app.route('/docs/file/<int:doc_id>/rename', methods=['PUT', 'OPTIONS'])
+def rename_document(doc_id):
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'PUT,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        # Forward to document service
+        service_url = SERVICES['docs']
+        target_url = f"{service_url}/docs/file/{doc_id}/rename"
+        
+        response = requests.put(
+            target_url,
+            headers=get_forwarded_headers(request),
+            json=request.get_json()
+        )
+        
+        return Response(
+            response.content,
+            status=response.status_code,
+            headers={
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error in rename_document: {str(e)}")
+        return jsonify({'error': 'Document service unavailable'}), 503
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000)

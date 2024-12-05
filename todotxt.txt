@@ -25,4 +25,5 @@ MUST TO DO TOMORROW
 - Finish a Files page feature
 - Files page - shared with me preview/cannot be found 404 --> DONE
 - Files page - Bulk share modal fails/single share works
+- Search service
 
