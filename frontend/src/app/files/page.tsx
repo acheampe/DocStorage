@@ -492,6 +492,13 @@ export default function Files() {
     };
   }, [files]);
 
+  const handleShareSuccess = () => {
+    setSuccessMessage('Document shared successfully!');
+    setTimeout(() => {
+      setSuccessMessage(null);
+    }, 3000);
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       <Navigation />
@@ -864,12 +871,9 @@ export default function Files() {
 
       {shareModalOpen !== -1 && (
         <ShareModal
-          onClose={() => {
-            setShareModalOpen(-1);
-            setSelectedFiles([]); // Clear selections after sharing
-          }}
-          selectedFiles={shareModalOpen === -2 ? selectedFiles : [shareModalOpen]}
-          isBulkShare={shareModalOpen === -2}
+          onClose={() => setShareModalOpen(-1)}
+          selectedFiles={[shareModalOpen]}
+          onSuccess={handleShareSuccess}
         />
       )}
     </div>

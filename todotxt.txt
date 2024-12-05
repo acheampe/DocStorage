@@ -19,8 +19,8 @@ TO DOS
 - Fix get auth user: GET /auth/users/1 HTTP/1.1" 403 -> Working path is: 127.0.0.1 - [04/Dec/2024 09:07:04] "POST /auth/user/by-id HTTP/1.1" 200 
 - Email address should not be case sensitive 
 
-MUST TO DO TODAY
-- Share functionality on all files page (single and bulk) --> DONE
-- search functionality must include shared with me and shared by me files
-- Edit recent files in dashboard
-- Consider changing UI in dashboard to tabs instead of dropdown
+MUST TO DO TOMORROW
+- Finish a Files page feature
+- Files page - shared with me preview/cannot be found 404
+- Files page - Bulk share modal fails/single share works
+
