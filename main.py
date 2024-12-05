@@ -45,7 +45,7 @@ def get_forwarded_headers(request):
             
             # Add sub claim if missing
             if 'user_id' in decoded and 'sub' not in decoded:
-                decoded['sub'] = decoded['user_id']
+                decoded['sub'] = str(decoded['user_id'])  # Convert to string for sub claim
                 
                 # Create new token with sub claim
                 new_token = jwt.encode(
@@ -817,7 +817,7 @@ def get_user_id_from_token(auth_header):
         print(f"Unexpected error decoding token: {str(e)}")
         return None
 
-@app.route('/users/lookup', methods=['GET', 'OPTIONS'])
+@app.route('/auth/users/lookup', methods=['GET', 'OPTIONS'])
 def lookup_user():
     if request.method == 'OPTIONS':
         response = make_response()

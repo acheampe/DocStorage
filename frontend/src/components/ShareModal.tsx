@@ -21,26 +21,44 @@ export default function ShareModal({ onClose, isBulkShare, selectedFiles, select
   const [isValidatingEmail, setIsValidatingEmail] = useState(false);
 
   const lookupUserByEmail = async (email: string): Promise<number> => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      throw new Error('Not authenticated');
-    }
-
-    const response = await fetch(`http://127.0.0.1:5000/users/lookup?email=${encodeURIComponent(email)}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
+    try {
+      const token = localStorage.getItem('token');
+      console.log('Debug - Token:', token ? token.substring(0, 20) + '...' : 'Missing');
+      
+      if (!token) {
+        throw new Error('No authentication token found');
       }
-    });
 
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new Error('User not found. Please ensure the recipient has a DocStorage account.');
+      const response = await fetch(
+        `http://127.0.0.1:5000/auth/users/lookup?email=${encodeURIComponent(email)}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include'
+        }
+      );
+
+      console.log('Debug - Response status:', response.status);
+      const responseText = await response.text();
+      console.log('Debug - Response body:', responseText);
+
+      if (!response.ok) {
+        throw new Error(`Failed to validate recipient: ${response.status} ${response.statusText}`);
       }
-      throw new Error('Failed to validate recipient');
-    }
 
-    const userData: UserLookupResponse = await response.json();
-    return userData.user_id;
+      const data = JSON.parse(responseText);
+      if (!data.user_id) {
+        throw new Error('User not found');
+      }
+
+      return data.user_id;
+    } catch (error) {
+      console.error('Lookup error:', error);
+      throw error;
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

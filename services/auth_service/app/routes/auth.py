@@ -7,6 +7,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.exc import IntegrityError
 from functools import wraps
+import traceback
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -17,19 +18,38 @@ def jwt_required():
             token = None
             auth_header = request.headers.get('Authorization')
             
+            print("Debug - Auth header:", auth_header)
+            
             if auth_header and auth_header.startswith('Bearer '):
                 token = auth_header.split(' ')[1]
+                print("Debug - Token found:", token[:20] + "...")
             
             if not token:
+                print("Debug - No token found")
                 return jsonify({'error': 'Token is missing'}), 401
             
             try:
-                payload = jwt.decode(token, os.getenv('SECRET_KEY'), algorithms=['HS256'])
-                current_user_id = payload['user_id']
+                # Log the secret key being used (first few chars only)
+                secret_key = os.getenv('SECRET_KEY')
+                print("Debug - Secret key starts with:", secret_key[:10] if secret_key else None)
+                
+                # Try to decode the token
+                payload = jwt.decode(token, secret_key, algorithms=['HS256'])
+                print("Debug - Token successfully decoded")
+                print("Debug - Token payload:", payload)
+                
+                current_user_id = payload.get('user_id')
+                if not current_user_id:
+                    print("Debug - No user_id in token payload")
+                    return jsonify({'error': 'Invalid token structure'}), 401
+                    
             except jwt.ExpiredSignatureError:
+                print("Debug - Token expired")
                 return jsonify({'error': 'Token has expired'}), 401
-            except jwt.InvalidTokenError:
-                return jsonify({'error': 'Invalid token'}), 401
+            except jwt.InvalidTokenError as e:
+                print("Debug - Invalid token:", str(e))
+                print("Debug - Token structure:", token.split('.') if token else None)
+                return jsonify({'error': f'Invalid token: {str(e)}'}), 401
                 
             return f(*args, current_user_id=current_user_id, **kwargs)
         return decorated_function
@@ -223,14 +243,23 @@ def get_user_by_id():
 @jwt_required()
 def lookup_user(current_user_id):
     try:
+        # Log request details
+        print("Debug - Headers:", dict(request.headers))
+        print(f"Debug - Current user ID: {current_user_id}")
+        
         email = request.args.get('email')
         if not email:
+            print("Debug - No email provided")
             return jsonify({'error': 'Email parameter is required'}), 400
+            
+        print(f"Debug - Looking up email: {email}")
             
         user = User.query.filter_by(email=email).first()
         if not user:
+            print(f"Debug - No user found for email: {email}")
             return jsonify({'error': 'User not found'}), 404
             
+        print(f"Debug - Found user: {user.user_id}")
         return jsonify({
             'user_id': user.user_id,
             'email': user.email,
@@ -239,5 +268,6 @@ def lookup_user(current_user_id):
         }), 200
         
     except Exception as e:
-        print(f"Error in lookup_user: {str(e)}")
+        print(f"Debug - Lookup error: {str(e)}")
+        print("Debug - Full traceback:", traceback.format_exc())
         return jsonify({'error': 'Internal server error'}), 500
