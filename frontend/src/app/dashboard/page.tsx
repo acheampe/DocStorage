@@ -193,24 +193,21 @@ export default function Dashboard() {
     const fetchSharedFiles = async () => {
       try {
         const token = localStorage.getItem('token');
-        const userData = localStorage.getItem('user');
-        if (!token || !userData) {
-          console.error('No token or user data found');
+        if (!token) {
+          console.error('No token found');
           return;
         }
 
-        const user = JSON.parse(userData);
-
-        // Fetch files shared with me
-        const withMeResponse = await fetch(`http://127.0.0.1:5000/share/shared-with-me/${user.user_id}`, {
+        // Fetch files shared with me (using the correct endpoint)
+        const withMeResponse = await fetch('http://127.0.0.1:5000/share/shared-with-me', {
           headers: {
             'Authorization': `Bearer ${token}`
           },
           credentials: 'include'
         });
 
-        // Fetch files shared by me
-        const byMeResponse = await fetch(`http://127.0.0.1:5000/share/shared-by-me/${user.user_id}`, {
+        // Fetch files shared by me (using the correct endpoint)
+        const byMeResponse = await fetch('http://127.0.0.1:5000/share/shared-by-me', {
           headers: {
             'Authorization': `Bearer ${token}`
           },
@@ -227,6 +224,7 @@ export default function Dashboard() {
         console.log('Shared with me:', withMeData);
         console.log('Shared by me:', byMeData);
 
+        // Update state with the fetched data
         setSharedWithMeFiles(withMeData.shares || []);
         setSharedByMeFiles(byMeData.shares || []);
 
@@ -375,10 +373,8 @@ export default function Dashboard() {
   const handlePreview = async (docId: number, isSharedWithMe: boolean = false, filename: string) => {
     try {
       const token = localStorage.getItem('token');
-      const userData = localStorage.getItem('user');
-      if (!token || !userData) {
-        console.error('No token or user data found');
-        router.push('/login');
+      if (!token) {
+        console.error('No token found');
         return;
       }
 
@@ -397,8 +393,10 @@ export default function Dashboard() {
         .flat()
         .includes(fileExt || '');
 
-      // Use share endpoints for both "Shared with Me" and "Shared by Me" sections
-      const isSharedSection = isSharedWithMe || window.location.hash === '#shared-by-me';
+      // Use appropriate endpoints based on whether the file is shared
+      const endpoint = isSharedWithMe 
+        ? `http://127.0.0.1:5000/share/preview/${docId}`
+        : `http://127.0.0.1:5000/docs/file/${docId}`;
       
       // For non-previewable files, ask for download first
       if (!isPreviewable) {
@@ -410,11 +408,7 @@ export default function Dashboard() {
           return;
         }
 
-        const downloadEndpoint = isSharedSection
-          ? `http://127.0.0.1:5000/share/preview/${docId}`
-          : `http://127.0.0.1:5000/docs/file/${docId}`;
-
-        const downloadResponse = await fetch(downloadEndpoint, {
+        const downloadResponse = await fetch(endpoint, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Accept': '*/*'
@@ -438,13 +432,8 @@ export default function Dashboard() {
         return;
       }
 
-      // For previewable files, use the appropriate endpoint
-      const endpoint = isSharedSection
-        ? `http://127.0.0.1:5000/share/file/${docId}`
-        : `http://127.0.0.1:5000/docs/file/${docId}`;
-
+      // For previewable files, fetch and set preview data
       const response = await fetch(endpoint, {
-        method: 'GET',  // Explicitly set method
         headers: {
           'Authorization': `Bearer ${token}`,
           'Accept': '*/*'
@@ -499,7 +488,7 @@ export default function Dashboard() {
       }
     } catch (error) {
       console.error('Error handling file:', error);
-      alert(`Error handling file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      alert(error instanceof Error ? error.message : 'Failed to handle file');
       setPreviewData(null);
     }
   };

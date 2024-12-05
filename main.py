@@ -620,6 +620,26 @@ def get_shared_with_me():
         print(f"Unexpected error in get_shared_with_me: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
 
+def get_jwt_data(auth_header):
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return None
+        
+    token = auth_header.split(' ')[1]
+    try:
+        # Get JWT secret from environment
+        jwt_secret = os.getenv('JWT_SECRET_KEY')
+        if not jwt_secret:
+            print("Warning: JWT_SECRET_KEY not found in environment")
+            return None
+            
+        return jwt.decode(token, jwt_secret, algorithms=['HS256'])
+    except jwt.InvalidTokenError as e:
+        print(f"Token validation error: {str(e)}")
+        return None
+    except Exception as e:
+        print(f"Unexpected error decoding token: {str(e)}")
+        return None
+
 @app.route('/share/shared-by-me', methods=['GET', 'OPTIONS'])
 def get_shared_by_me():
     if request.method == 'OPTIONS':
@@ -631,9 +651,9 @@ def get_shared_by_me():
         return response
 
     try:
-        # Get user ID from token
-        token_data = get_jwt_data(request.headers.get('Authorization'))
-        if not token_data or 'user_id' not in token_data:
+        # Get user ID from token using the new function
+        user_id = get_user_id_from_token(request.headers.get('Authorization'))
+        if not user_id:
             return jsonify({'error': 'Unauthorized'}), 401
 
         # Forward request to share service
@@ -641,7 +661,7 @@ def get_shared_by_me():
         share_response = requests.get(
             f"{share_service_url}/share/shared-by-me",
             headers=get_forwarded_headers(request),
-            params={'owner_id': token_data['user_id']}
+            params={'owner_id': user_id}
         )
 
         if share_response.status_code == 200:
@@ -886,6 +906,108 @@ def preview_shared_document(doc_id):
     except requests.exceptions.RequestException as e:
         print(f"Gateway error in preview_shared_document: {str(e)}")
         return jsonify({'error': 'Share service unavailable'}), 503
+
+@app.route('/share/file/<doc_id>', methods=['GET', 'OPTIONS'])
+def get_shared_file(doc_id):
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        # Get user ID from token
+        user_id = get_user_id_from_token(request.headers.get('Authorization'))
+        if not user_id:
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        # Check access through share service
+        share_service_url = SERVICES['share']
+        access_check = requests.get(
+            f"{share_service_url}/share/check-access/{doc_id}",
+            headers=get_forwarded_headers(request)
+        )
+
+        if access_check.status_code != 200:
+            print(f"Access denied: {access_check.text}")
+            return jsonify({'error': 'Access denied'}), 403
+
+        # Access granted, get file from docs service
+        docs_service_url = SERVICES['docs']
+        file_response = requests.get(
+            f"{docs_service_url}/docs/file/{doc_id}",
+            headers=get_forwarded_headers(request),
+            stream=True
+        )
+
+        if file_response.status_code != 200:
+            return jsonify({'error': 'File not found'}), file_response.status_code
+
+        return Response(
+            file_response.content,
+            status=file_response.status_code,
+            headers={
+                'Content-Type': file_response.headers.get('Content-Type', 'application/octet-stream'),
+                'Content-Disposition': file_response.headers.get('Content-Disposition', ''),
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
+
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error in get_shared_file: {str(e)}")
+        return jsonify({'error': 'Service unavailable'}), 503
+
+@app.route('/share/file/<doc_id>/thumbnail', methods=['GET', 'OPTIONS'])
+def get_shared_file_thumbnail(doc_id):
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        # Get user ID from token
+        user_id = get_user_id_from_token(request.headers.get('Authorization'))
+        if not user_id:
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        # First check if user has access to this shared file
+        share_service_url = SERVICES['share']
+        access_check = requests.get(
+            f"{share_service_url}/share/check-access/{doc_id}",
+            headers=get_forwarded_headers(request),
+            params={'user_id': user_id}
+        )
+
+        if access_check.status_code != 200:
+            return jsonify({'error': 'Access denied'}), 403
+
+        # If access is granted, get the thumbnail from docs service
+        docs_service_url = SERVICES['docs']
+        thumbnail_response = requests.get(
+            f"{docs_service_url}/docs/file/{doc_id}/thumbnail",
+            headers=get_forwarded_headers(request),
+            stream=True
+        )
+
+        return Response(
+            thumbnail_response.content,
+            status=thumbnail_response.status_code,
+            headers={
+                'Content-Type': thumbnail_response.headers.get('Content-Type', 'image/jpeg'),
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
+
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error in get_shared_file_thumbnail: {str(e)}")
+        return jsonify({'error': 'Service unavailable'}), 503
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000)

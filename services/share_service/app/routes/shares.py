@@ -263,3 +263,40 @@ def preview_shared_file(current_user, doc_id):
         print(f"Error in preview_shared_file: {str(e)}")
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500 
+
+@share_bp.route('/share/check-access/<int:doc_id>', methods=['GET'])
+@require_auth
+def check_file_access(current_user, doc_id):
+    try:
+        user_id = current_user['user_id']
+        print(f"Checking access for doc_id {doc_id} and user {user_id}")
+
+        # Check if user is either owner or recipient of the shared document
+        share = SharedDocument.query.filter(
+            SharedDocument.doc_id == doc_id,
+            SharedDocument.status == 'active',
+            db.or_(
+                SharedDocument.owner_id == user_id,
+                SharedDocument.recipient_id == user_id
+            )
+        ).first()
+
+        if not share:
+            print(f"No active share found for doc_id {doc_id} and user {user_id}")
+            return jsonify({
+                'error': 'Access denied',
+                'has_access': False
+            }), 403
+
+        # Return success with share details
+        return jsonify({
+            'has_access': True,
+            'access_type': 'owner' if share.owner_id == user_id else 'recipient',
+            'share_id': share.share_id,
+            'original_filename': share.original_filename
+        }), 200
+
+    except Exception as e:
+        print(f"Error checking file access: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500 
