@@ -38,29 +38,33 @@ interface SharedFile {
   file_type?: string;
 }
 
+interface ImageUrls {
+  [key: number]: string;
+}
+
 function getFileIcon(filename: string | undefined): string {
-  if (!filename) return 'document'; // Default icon if no filename
+  if (!filename) return 'description'; // Default icon
   
   const ext = filename.split('.').pop()?.toLowerCase();
   
   switch (ext) {
-      case 'pdf':
-          return 'picture_as_pdf';
-      case 'doc':
-      case 'docx':
-          return 'description';
-      case 'xls':
-      case 'xlsx':
-          return 'table_chart';
-      case 'jpg':
-      case 'jpeg':
-      case 'png':
-      case 'gif':
-          return 'image';
-      case 'txt':
-          return 'article';
-      default:
-          return 'document';
+    case 'pdf':
+      return 'picture_as_pdf';
+    case 'doc':
+    case 'docx':
+      return 'description';
+    case 'xls':
+    case 'xlsx':
+      return 'table_chart';
+    case 'jpg':
+    case 'jpeg':
+    case 'png':
+    case 'gif':
+      return 'image';
+    case 'txt':
+      return 'article';
+    default:
+      return 'description';
   }
 }
 
@@ -70,7 +74,7 @@ export default function Dashboard() {
   const [recentFiles, setRecentFiles] = useState<File[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
-  const [imageUrls, setImageUrls] = useState<{ [key: number]: string }>({});
+  const [imageUrls, setImageUrls] = useState<ImageUrls>({});
   const [searchResults, setSearchResults] = useState<File[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -132,6 +136,11 @@ export default function Dashboard() {
     const fetchRecentFiles = async () => {
       try {
         const token = localStorage.getItem('token');
+        if (!token) {
+          console.error('No token found');
+          return;
+        }
+
         const response = await fetch('http://127.0.0.1:5000/docs/recent', {
           headers: {
             'Authorization': `Bearer ${token}`
@@ -144,25 +153,32 @@ export default function Dashboard() {
         }
 
         const data = await response.json();
-        // Verify each file exists before adding to UI
-        const verifiedFiles = [];
-        for (const file of data.files) {
-          const verifyResponse = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            },
-            credentials: 'include'
+        setRecentFiles(data.files || []);
+
+        // Only fetch thumbnails for image files
+        const imageFiles = data.files.filter((file: File) => file.file_type?.startsWith('image/'));
+        
+        if (imageFiles.length > 0) {
+          const thumbnailPromises = imageFiles.map(async (file: File) => {
+            try {
+              const thumbnailUrl = await fetchThumbnail(file.doc_id);
+              return { id: file.doc_id, url: thumbnailUrl };
+            } catch (error) {
+              console.error(`Error fetching thumbnail for file ${file.doc_id}:`, error);
+              return null;
+            }
           });
-          if (verifyResponse.ok) {
-            verifiedFiles.push({
-              doc_id: file.doc_id,
-              original_filename: file.original_filename,
-              upload_date: file.upload_date,
-              file_type: file.file_type
-            });
-          }
+
+          const thumbnails = await Promise.all(thumbnailPromises);
+          const newImageUrls: ImageUrls = {};
+          thumbnails.forEach(thumb => {
+            if (thumb) {
+              newImageUrls[thumb.id] = thumb.url;
+            }
+          });
+          setImageUrls(newImageUrls);
         }
-        setRecentFiles(verifiedFiles);
+
       } catch (error) {
         console.error('Error fetching recent files:', error);
       }
@@ -186,7 +202,7 @@ export default function Dashboard() {
         const user = JSON.parse(userData);
 
         // Fetch files shared with me
-        const withMeResponse = await fetch(`http://127.0.0.1:5000/share/shared-with-me?recipient_id=${user.user_id}`, {
+        const withMeResponse = await fetch(`http://127.0.0.1:5000/share/shared-with-me/${user.user_id}`, {
           headers: {
             'Authorization': `Bearer ${token}`
           },
@@ -194,7 +210,7 @@ export default function Dashboard() {
         });
 
         // Fetch files shared by me
-        const byMeResponse = await fetch(`http://127.0.0.1:5000/share/shared-by-me?owner_id=${user.user_id}`, {
+        const byMeResponse = await fetch(`http://127.0.0.1:5000/share/shared-by-me/${user.user_id}`, {
           headers: {
             'Authorization': `Bearer ${token}`
           },
@@ -235,7 +251,7 @@ export default function Dashboard() {
       const token = localStorage.getItem('token');
       const response = await fetch(
         isShared 
-          ? `http://127.0.0.1:5000/share/thumbnail/${docId}`
+          ? `http://127.0.0.1:5000/share/file/${docId}/thumbnail`
           : `http://127.0.0.1:5000/docs/file/${docId}/thumbnail`,
         {
           headers: {
@@ -259,10 +275,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     const loadImages = async () => {
-      const newImageUrls: { [key: number]: string } = {};
+      const newImageUrls: ImageUrls = {};
       
-      // Load thumbnails for recent files
-      for (const file of recentFiles) {
+      // Load thumbnails only for image files in recent files
+      const recentImageFiles = recentFiles.filter(file => file.file_type?.startsWith('image/'));
+      for (const file of recentImageFiles) {
         try {
           const thumbnailUrl = await fetchThumbnail(file.doc_id, false);
           if (thumbnailUrl) {
@@ -273,8 +290,9 @@ export default function Dashboard() {
         }
       }
       
-      // Load thumbnails for shared files
-      for (const file of sharedWithMeFiles) {
+      // Load thumbnails only for image files in shared files
+      const sharedImageFiles = sharedWithMeFiles.filter(file => file.file_type?.startsWith('image/'));
+      for (const file of sharedImageFiles) {
         try {
           const thumbnailUrl = await fetchThumbnail(file.doc_id, true);
           if (thumbnailUrl) {
@@ -319,7 +337,7 @@ export default function Dashboard() {
         }
 
         const response = await fetch(
-          `http://127.0.0.1:5000/search?q=${encodeURIComponent(searchQuery)}&user_id=${user.user_id}`,
+          `http://127.0.0.1:5000/docs/search?q=${encodeURIComponent(searchQuery)}`,
           {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -357,8 +375,10 @@ export default function Dashboard() {
   const handlePreview = async (docId: number, isSharedWithMe: boolean = false, filename: string) => {
     try {
       const token = localStorage.getItem('token');
-      if (!token) {
-        console.error('No token found');
+      const userData = localStorage.getItem('user');
+      if (!token || !userData) {
+        console.error('No token or user data found');
+        router.push('/login');
         return;
       }
 
@@ -391,8 +411,8 @@ export default function Dashboard() {
         }
 
         const downloadEndpoint = isSharedSection
-          ? `http://127.0.0.1:5000/share/preview/${docId}`  // Use preview endpoint for shared files
-          : `http://127.0.0.1:5000/docs/file/${docId}`;     // Use file endpoint for regular docs
+          ? `http://127.0.0.1:5000/share/preview/${docId}`
+          : `http://127.0.0.1:5000/docs/file/${docId}`;
 
         const downloadResponse = await fetch(downloadEndpoint, {
           headers: {
@@ -420,10 +440,11 @@ export default function Dashboard() {
 
       // For previewable files, use the appropriate endpoint
       const endpoint = isSharedSection
-        ? `http://127.0.0.1:5000/share/preview/${docId}`  // Use preview endpoint for shared files
-        : `http://127.0.0.1:5000/docs/file/${docId}`;     // Use file endpoint for regular docs
+        ? `http://127.0.0.1:5000/share/file/${docId}`
+        : `http://127.0.0.1:5000/docs/file/${docId}`;
 
       const response = await fetch(endpoint, {
+        method: 'GET',  // Explicitly set method
         headers: {
           'Authorization': `Bearer ${token}`,
           'Accept': '*/*'
@@ -600,7 +621,6 @@ export default function Dashboard() {
         
         {!sectionsCollapsed.recent && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-            {/* Show either search results or recent files */}
             {(searchQuery ? searchResults : recentFiles).map((file) => (
               <div 
                 key={file.doc_id} 
@@ -608,7 +628,7 @@ export default function Dashboard() {
                 onClick={() => handlePreview(file.doc_id, false, file.original_filename)}
               >
                 <div className="mb-2">
-                  {file.file_type.startsWith('image/') ? (
+                  {file.file_type?.startsWith('image/') ? (
                     <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50 relative">
                       {imageUrls[file.doc_id] ? (
                         <img 
@@ -628,8 +648,8 @@ export default function Dashboard() {
                           }}
                         />
                       ) : (
-                        <span className="material-symbols-rounded text-navy text-4xl animate-pulse">
-                          hourglass_empty
+                        <span className="material-symbols-rounded text-navy text-4xl">
+                          {getFileIcon(file.original_filename)}
                         </span>
                       )}
                     </div>
@@ -651,7 +671,7 @@ export default function Dashboard() {
                       e.stopPropagation();
                       setShareModalOpen(file.doc_id);
                     }}
-                    className="text-navy hover:text-gold transition-colors"
+                    className="material-symbols-rounded text-navy hover:text-gold transition-colors cursor-pointer"
                     title="Share this document"
                   >
                     <span className="material-symbols-rounded">share</span>
@@ -660,12 +680,12 @@ export default function Dashboard() {
               </div>
             ))}
             
-            {/* Only show upload placeholders for recent files view */}
+            {/* Upload placeholders */}
             {!searchQuery && Array.from({ length: Math.max(0, 6 - recentFiles.length) }).map((_, index) => (
               <Link
                 key={`empty-${index}`}
                 href="/uploadFiles"
-                className="p-4 border-2 border-dashed border-navy rounded-lg hover:border-gold transition-colors cursor-pointer flex flex-col"
+                className="p-4 border-2 border-dashed border-navy rounded-lg hover:border-gold transition-colors"
               >
                 <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
                   <span className="material-symbols-rounded text-navy text-4xl">
@@ -673,9 +693,7 @@ export default function Dashboard() {
                   </span>
                 </div>
                 <h4 className="font-bold text-navy text-center">Upload More Files</h4>
-                <p className="text-sm text-gray-600 mt-auto text-center">
-                  Click to add files
-                </p>
+                <p className="text-sm text-gray-600 text-center">Click to add files</p>
               </Link>
             ))}
           </div>
@@ -782,46 +800,30 @@ export default function Dashboard() {
 
             {!sectionsCollapsed.sharedByMe && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {sharedByMeFiles.map((share) => {
-                  console.log('Share data:', share);
-                  
-                  // Try to get the filename in order of preference
-                  const filename = share.original_filename || share.display_name || share.filename || `Document ${share.doc_id}`;
-                  
-                  // Check if it's an image file
-                  const isImage = filename.match(/\.(jpg|jpeg|png|gif|bmp)$/i) !== null;
-                  
-                  return (
-                    <div 
-                      key={share.share_id} 
-                      className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
-                      onClick={() => handlePreview(share.doc_id, false, filename)}
-                    >
-                      <div className="mb-2">
-                        <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
-                          {isImage ? (
-                            <span className="material-symbols-rounded text-navy text-4xl">
-                              image
-                            </span>
-                          ) : (
-                            <span className="material-symbols-rounded text-navy text-4xl">
-                              {getFileIcon(filename)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <h4 className="font-bold text-navy truncate">{filename}</h4>
-                      <div className="flex justify-between items-center mt-2">
-                        <p className="text-sm text-gray-600">
-                          {new Date(share.shared_date).toLocaleDateString()}
-                        </p>
-                        <span className="text-sm text-navy">
-                          Shared with: {share.shared_with}
+                {sharedByMeFiles.map((share) => (
+                  <div 
+                    key={share.share_id} 
+                    className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
+                    onClick={() => handlePreview(share.doc_id, false, share.original_filename)}
+                  >
+                    <div className="mb-2">
+                      <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                        <span className="material-symbols-rounded text-navy text-4xl">
+                          {getFileIcon(share.original_filename)}
                         </span>
                       </div>
                     </div>
-                  );
-                })}
+                    <h4 className="font-bold text-navy truncate">{share.original_filename}</h4>
+                    <div className="flex justify-between items-center mt-2">
+                      <p className="text-sm text-gray-600">
+                        {new Date(share.shared_date).toLocaleDateString()}
+                      </p>
+                      <span className="text-sm text-navy">
+                        Shared with: {share.shared_with}
+                      </span>
+                    </div>
+                  </div>
+                ))}
                 {sharedByMeFiles.length === 0 && (
                   <div className="col-span-3 p-8 text-center text-gray-500">
                     You haven't shared any files yet.
@@ -834,14 +836,12 @@ export default function Dashboard() {
       </main>
       <Footer />
 
-      {/* Preview Modal - Lower z-index */}
+      {/* Preview Modal */}
       {previewData && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40"
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
           onClick={() => {
-            if (previewData.type !== 'text') {
-              URL.revokeObjectURL(previewData.url);
-            }
+            URL.revokeObjectURL(previewData.url);
             setPreviewData(null);
           }}
         >
@@ -864,9 +864,7 @@ export default function Dashboard() {
                 </button>
                 <button 
                   onClick={() => {
-                    if (previewData.type !== 'text') {
-                      URL.revokeObjectURL(previewData.url);
-                    }
+                    URL.revokeObjectURL(previewData.url);
                     setPreviewData(null);
                   }}
                   className="text-gray-500 hover:text-gray-700"
@@ -898,7 +896,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Share Modal - Higher z-index */}
+      {/* Share Modal */}
       {shareModalOpen > -1 && (
         <ShareModal
           onClose={() => setShareModalOpen(-1)}

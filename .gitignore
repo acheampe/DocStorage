@@ -13,12 +13,21 @@ venv
 
 #ignore test account
 usertxt.txt
-
-#ignore todo list
-todotxt.txt
+database_names.txt
+users.txt
 
 #ignore DocStorage
 DocStorageDocuments/
 
 #ignore login_databases.sh
 login_databases.sh  
+
+#ignore python cache
+*.pyc
+__pycache__
+
+#ignore iterate_databases.sh
+iterate_databases.sh
+
+#ignore truncate_tables.sh
+truncate_tables.sh

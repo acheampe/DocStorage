@@ -26,26 +26,49 @@ ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'doc', 'docx'}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 def get_user_id_from_token():
-    # Check Authorization header first
-    auth_header = request.headers.get('Authorization')
-    if auth_header and auth_header.startswith('Bearer '):
-        token = auth_header.split(' ')[1]
-    else:
-        # Check query parameters
-        token = request.args.get('token')
-        if not token:
-            return None
-    
     try:
-        payload = jwt.decode(token, os.getenv('SECRET_KEY'), algorithms=['HS256'])
-        return payload['user_id']
-    except jwt.InvalidTokenError:
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            print("Debug - No Bearer token found")
+            return None
+            
+        token = auth_header.split(' ')[1]
+        secret_key = current_app.config.get('SECRET_KEY')
+        
+        # Decode token with more detailed error handling
+        try:
+            payload = jwt.decode(
+                token, 
+                secret_key, 
+                algorithms=['HS256'],
+                options={"verify_sub": False}  # Don't verify the 'sub' claim
+            )
+            user_id = payload.get('user_id')
+            print(f"Debug - Token payload: {payload}")
+            print(f"Debug - Extracted user_id: {user_id}")
+            return user_id
+            
+        except jwt.ExpiredSignatureError:
+            print("Debug - Token has expired")
+            return None
+        except jwt.InvalidTokenError as e:
+            print(f"Debug - Invalid token: {str(e)}")
+            return None
+            
+    except Exception as e:
+        print(f"Debug - Token processing error: {str(e)}")
         return None
 
 def allowed_file(filename):
+    """
+    Check if the file extension is allowed.
+    """
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def generate_pdf_thumbnail(pdf_path):
+    """
+    Generate a thumbnail for a PDF file.
+    """
     try:
         # Convert first page of PDF to image using pdf2image (works on Mac)
         images = convert_from_path(pdf_path, first_page=1, last_page=1)
@@ -63,11 +86,11 @@ def generate_pdf_thumbnail(pdf_path):
     return None
 
 def generate_docx_thumbnail(docx_path):
+    """
+    Generate a thumbnail for a DOCX file.
+    """
     try:
         # First, try to convert DOCX to PDF using LibreOffice
-        pdf_path = docx_path.replace('.docx', '.pdf')
-        
-        # Create a temporary directory without spaces
         temp_dir = os.path.join('/tmp', 'docx_conversion')
         os.makedirs(temp_dir, exist_ok=True)
         
@@ -147,6 +170,9 @@ def generate_docx_thumbnail(docx_path):
 
 @docs_bp.route('/docs/upload', methods=['POST', 'OPTIONS'])
 def upload_document():
+    """
+    Upload a document for the user.
+    """
     if request.method == 'OPTIONS':
         return '', 200
         
@@ -281,17 +307,11 @@ def upload_document():
             'success': True
         }), 201
 
-@docs_bp.route('/docs/documents', methods=['GET'])
-def get_user_documents():
-    user_id = get_user_id_from_token()
-    if not user_id:
-        return jsonify({'error': 'Unauthorized'}), 401
-
-    documents = Document.query.filter_by(user_id=user_id).all()
-    return jsonify([doc.to_dict() for doc in documents]), 200
-
 @docs_bp.route('/docs/documents/<int:doc_id>', methods=['GET'])
 def download_document(doc_id):
+    """
+    Download a document for the user.
+    """
     user_id = get_user_id_from_token()
     if not user_id:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -305,6 +325,9 @@ def download_document(doc_id):
 
 @docs_bp.route('/docs/documents/<int:doc_id>', methods=['DELETE'])
 def delete_document(doc_id):
+    """
+    Delete a document for the user.
+    """
     user_id = get_user_id_from_token()
     if not user_id:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -327,95 +350,99 @@ def delete_document(doc_id):
         db.session.rollback()  # Add rollback on error
         return jsonify({'error': str(e)}), 500
 
-@docs_bp.route('/docs/recent', methods=['GET'])
-def get_recent_documents():
-    user_id = get_user_id_from_token()
-    if not user_id:
-        return jsonify({'error': 'Unauthorized'}), 401
-
+@docs_bp.route('/docs/file/<int:doc_id>/thumbnail', methods=['GET'])
+def get_file_thumbnail(doc_id):
+    """
+    Get a thumbnail for a file for the user.
+    """
     try:
-        documents = Document.query.filter_by(user_id=user_id)\
-            .order_by(Document.upload_date.desc())\
-            .limit(6)\
-            .all()
-        
-        return jsonify({
-            'files': [doc.to_dict() for doc in documents]
-        }), 200
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@docs_bp.route('/docs/file/<int:file_id>', methods=['GET'])
-def get_file_direct(file_id):
-    try:
-        # Get user_id from token
-        user_id = get_user_id_from_token()
-        if not user_id:
-            return jsonify({'error': 'Unauthorized'}), 401
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'No token provided'}), 401
             
-        document = Document.query.filter_by(doc_id=file_id, user_id=user_id).first()
-        if not document:
-            return jsonify({'error': 'File not found'}), 404
-
-        file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], 
-                                str(user_id), 
-                                document.filename)
+        token = auth_header.split(' ')[1]
         
-        if not os.path.exists(file_path):
-            return jsonify({'error': 'File not found on disk'}), 404
+        try:
+            # Decode token without verifying sub claim
+            secret_key = current_app.config.get('SECRET_KEY')
+            payload = jwt.decode(token, secret_key, algorithms=['HS256'], options={"verify_sub": False})
+            user_id = payload.get('user_id')
+            
+            if not user_id:
+                return jsonify({'error': 'Invalid token payload'}), 401
 
-        response = send_file(
-            file_path,
-            mimetype=document.file_type,
-            as_attachment=True,
-            download_name=document.original_filename
-        )
-        
-        return response
+            # Get the document
+            document = Document.query.filter_by(doc_id=doc_id, user_id=user_id).first()
+            if not document:
+                return jsonify({'error': 'Document not found'}), 404
+
+            # Construct file path
+            file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], 
+                                   str(document.user_id), 
+                                   document.filename)
+            
+            if not os.path.exists(file_path):
+                return jsonify({'error': 'File not found on disk'}), 404
+
+            # Generate thumbnail for image files
+            if document.file_type.startswith('image/'):
+                try:
+                    with Image.open(file_path) as img:
+                        # Increased height in target size
+                        target_size = (200, 300)  # Changed from (200, 200)
+                        
+                        # Calculate aspect ratios
+                        img_ratio = img.size[0] / img.size[1]
+                        target_ratio = target_size[0] / target_size[1]
+                        
+                        if img_ratio > target_ratio:
+                            # Image is wider than target
+                            resize_size = (
+                                int(target_size[1] * img_ratio),
+                                target_size[1]
+                            )
+                        else:
+                            # Image is taller than target
+                            resize_size = (
+                                target_size[0],
+                                int(target_size[0] / img_ratio)
+                            )
+                        
+                        # Resize image
+                        img = img.resize(resize_size, Image.Resampling.LANCZOS)
+                        
+                        # Create new image with center crop
+                        left = (resize_size[0] - target_size[0]) // 2
+                        top = (resize_size[1] - target_size[1]) // 2
+                        right = left + target_size[0]
+                        bottom = top + target_size[1]
+                        
+                        img = img.crop((left, top, right, bottom))
+                        
+                        thumbnail_io = BytesIO()
+                        img.save(thumbnail_io, format=img.format or 'JPEG', quality=85)
+                        thumbnail_io.seek(0)
+                        return send_file(
+                            thumbnail_io,
+                            mimetype=document.file_type,
+                            as_attachment=False
+                        )
+                except Exception as e:
+                    print(f"Thumbnail generation error: {str(e)}")
+                    return jsonify({'error': 'Error generating thumbnail'}), 500
+
+            # For non-image files, return a default icon or error
+            return jsonify({'error': 'Not an image file'}), 400
+
+        except jwt.InvalidTokenError as e:
+            print(f"Token decode error: {str(e)}")
+            return jsonify({'error': 'Invalid token'}), 401
 
     except Exception as e:
-        print(f"Error serving file: {str(e)}")
-        return jsonify({'error': 'Failed to serve file'}), 500
-
-@docs_bp.route('/docs/file/<int:file_id>/thumbnail', methods=['GET'])
-def get_file_thumbnail(file_id):
-    try:
-        # Get user_id from token
-        user_id = get_user_id_from_token()
-        if not user_id:
-            return jsonify({'error': 'Unauthorized'}), 401
-            
-        document = Document.query.filter_by(doc_id=file_id, user_id=user_id).first()
-        if not document:
-            return jsonify({'error': 'File not found'}), 404
-
-        file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], 
-                                str(user_id), 
-                                document.filename)
-        
-        if not os.path.exists(file_path):
-            return jsonify({'error': 'File not found on disk'}), 404
-            
-        # Generate thumbnail
-        img = Image.open(file_path)
-        img.thumbnail((200, 200))  # Resize to thumbnail size
-        
-        # Save to bytes
-        img_io = BytesIO()
-        img.save(img_io, 'PNG')
-        img_io.seek(0)
-        
-        return send_file(
-            img_io, 
-            mimetype='image/png',
-            as_attachment=False
-        )
-        
-    except Exception as e:
-        print(f"Error generating thumbnail: {str(e)}")
-        print(f"Traceback: {traceback.format_exc()}")
-        return jsonify({'error': 'Error generating thumbnail'}), 500
+        print(f"Error in get_file_thumbnail: {str(e)}")
+        print("Traceback:", traceback.format_exc())
+        return jsonify({'error': 'Internal server error'}), 500
 
 @docs_bp.route('/docs/documents/<int:doc_id>', methods=['PATCH', 'OPTIONS'])
 @cross_origin(
@@ -482,124 +509,109 @@ def update_document(doc_id):
 
 @docs_bp.route('/docs/recent', methods=['GET'])
 def get_recent_files():
+    """
+    Get the 6 most recent files for the user.
+    """
     try:
-        # Get the user_id from the Authorization header
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
-            print("No token provided or invalid format")
             return jsonify({'error': 'No token provided'}), 401
             
         token = auth_header.split(' ')[1]
-        print(f"Received token: {token[:10]}...")  # Print first 10 chars for debugging
         
         try:
-            # Make sure we're using the same secret key as the auth service
             secret_key = current_app.config.get('SECRET_KEY')
-            print(f"Using secret key: {secret_key[:10]}...")  # Print first 10 chars for debugging
-            
-            payload = jwt.decode(token, secret_key, algorithms=['HS256'])
+            # Don't verify the 'sub' claim
+            payload = jwt.decode(token, secret_key, algorithms=['HS256'], options={"verify_sub": False})
             user_id = payload.get('user_id')
+            
             if not user_id:
-                print("No user_id in token payload")
                 return jsonify({'error': 'Invalid token payload'}), 401
-                
-            print(f"Decoded user_id: {user_id}")
+
+            # Query recent files
+            recent_files = Document.query.filter_by(user_id=user_id)\
+                .order_by(Document.upload_date.desc())\
+                .limit(6)\
+                .all()
+            
+            files_data = [{
+                'doc_id': doc.doc_id,
+                'original_filename': doc.original_filename,
+                'upload_date': doc.upload_date.isoformat(),
+                'file_type': doc.file_type
+            } for doc in recent_files]
+
+            return jsonify({'files': files_data}), 200
+
         except jwt.InvalidTokenError as e:
             print(f"Token decode error: {str(e)}")
             return jsonify({'error': 'Invalid token'}), 401
-
-        # Query for recent files
-        recent_files = Document.query.filter_by(user_id=user_id)\
-            .order_by(Document.upload_date.desc())\
-            .limit(6)\
-            .all()
-
-        files_data = [{
-            'doc_id': doc.doc_id,
-            'original_filename': doc.original_filename,
-            'upload_date': doc.upload_date.isoformat(),
-            'file_type': doc.file_type
-        } for doc in recent_files]
-
-        return jsonify({'files': files_data}), 200
 
     except Exception as e:
         print(f"Error in get_recent_files: {str(e)}")
         print("Traceback:", traceback.format_exc())
         return jsonify({'error': 'Internal server error'}), 500
 
-@docs_bp.route('/docs/file/<int:file_id>', methods=['GET'])
-@docs_bp.route('/docs/file/<int:file_id>/thumbnail', methods=['GET'])
-def get_file_content(file_id):
+@docs_bp.route('/docs/file/<int:doc_id>', methods=['GET'])
+def get_file_content(doc_id):
     try:
-        document = Document.query.filter_by(doc_id=file_id).first()
+        # Get user_id from token and add debug logging
+        user_id = get_user_id_from_token()
+        print(f"Debug - Token user_id: {user_id}")
+        print(f"Debug - Requested doc_id: {doc_id}")
         
-        if not document:
-            return jsonify({'error': 'File not found'}), 404
+        if not user_id:
+            return jsonify({'error': 'Unauthorized'}), 401
 
-        # Construct file path using user_id and filename
-        file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], 
-                                str(document.user_id), 
-                                document.filename)
-        
-        if not os.path.exists(file_path):
-            print(f"File not found at path: {file_path}")
-            return jsonify({'error': 'File not found on disk'}), 404
+        try:
+            # Get document and verify ownership with debug logging
+            document = Document.query.filter_by(doc_id=doc_id, user_id=user_id).first()
+            print(f"Debug - Document found: {document}")
+            print(f"Debug - Document details: {document.__dict__ if document else None}")
+            
+            if not document:
+                return jsonify({'error': 'File not found'}), 404
 
-        is_thumbnail = request.path.endswith('/thumbnail')
-        
-        if is_thumbnail and document.file_type.startswith('image/'):
-            try:
-                with Image.open(file_path) as img:
-                    img.thumbnail((100, 100))
-                    thumbnail_io = BytesIO()
-                    img.save(thumbnail_io, format=img.format)
-                    thumbnail_io.seek(0)
-                    return send_file(
-                        thumbnail_io,
-                        mimetype=document.file_type,
-                        as_attachment=False
-                    )
-            except Exception as e:
-                print(f"Thumbnail generation error: {str(e)}")
-                print(f"Traceback: {traceback.format_exc()}")
-                return jsonify({'error': 'Error generating thumbnail'}), 500
+            # Get absolute path of UPLOAD_FOLDER
+            upload_folder = os.path.abspath(current_app.config['UPLOAD_FOLDER'])
+            print(f"Debug - Upload folder: {upload_folder}")
 
-        # For non-thumbnails or non-images, send the original file
-        return send_file(
-            file_path,
-            mimetype=document.file_type,
-            as_attachment=True,
-            download_name=document.original_filename
-        )
+            # Construct file path
+            file_path = os.path.join(
+                upload_folder,
+                str(user_id),
+                document.filename
+            )
+            print(f"Debug - Constructed file path: {file_path}")
+            
+            if not os.path.exists(file_path):
+                print(f"Debug - File does not exist at path: {file_path}")
+                return jsonify({'error': 'File not found on disk'}), 404
+
+            print(f"Debug - File exists and attempting to send")
+            return send_file(
+                file_path,
+                as_attachment=False,
+                download_name=document.original_filename
+            )
+
+        except AttributeError as e:
+            print(f"Debug - Document attribute error: {str(e)}")
+            return jsonify({'error': 'Invalid document data'}), 500
+        except OSError as e:
+            print(f"Debug - File system error: {str(e)}")
+            return jsonify({'error': 'File system error'}), 500
 
     except Exception as e:
-        print(f"Error retrieving file: {str(e)}")
-        print(f"Traceback: {traceback.format_exc()}")
+        print(f"Debug - Unexpected error: {str(e)}")
+        print("Debug - Full traceback:", traceback.format_exc())
         return jsonify({'error': 'Internal server error'}), 500
-
-def get_file(doc_id, user_id):
-    try:
-        document = Document.query.filter_by(doc_id=doc_id).first()
-        if not document:
-            logger.error(f"Document not found: {doc_id}")
-            return None, None
-            
-        # Combine UPLOAD_FOLDER with the stored file_path
-        full_path = os.path.join(current_app.config['UPLOAD_FOLDER'], document.file_path)
-        logger.info(f"Accessing file at: {full_path}")
-        
-        if not os.path.exists(full_path):
-            logger.error(f"File not found at path: {full_path}")
-            return None, None
-            
-        return document, full_path
-    except Exception as e:
-        logger.error(f"Error retrieving file: {str(e)}\nTraceback: {traceback.format_exc()}")
-        return None, None
 
 @docs_bp.route('/docs/documents', methods=['GET'])
 def get_all_documents():
+    """
+    Get all documents for the user.
+    """
     try:
         user_id = get_user_id_from_token()
         if not user_id:
@@ -625,6 +637,9 @@ def get_all_documents():
 
 @docs_bp.route('/docs/file/<int:doc_id>/metadata', methods=['GET'])
 def get_file_metadata(doc_id):
+    """
+    Get the metadata for a file for the user.
+    """
     try:
         document = Document.query.filter_by(doc_id=doc_id).first()
         if not document:

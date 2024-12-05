@@ -5,3 +5,6 @@ psycopg2-binary
 Flask-CORS
 python-magic
 werkzeug
+pdf2image
+python-docx
+Wand

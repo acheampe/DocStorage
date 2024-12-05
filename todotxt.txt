@@ -1,0 +1,26 @@
+
+DB services
+- Name: dSAuthService
+- Name: dSDocMgmtService
+- Name: dSDocSearchService
+- Name: dSShareService
+
+TO DOS
+- Work on optimizing thumbnail images in the files page
+- Implement forgot password feature 
+- Work on optimizing thumbnail images in the dashboard
+- Add intuitive way to return to dashboard page from search results page outside of clearing the search query
+- Add intuitive way to return to files page from search results page outside of clearing the search query
+- Add file descriptions to files page and search functionality
+- Prevent ability to edit file extensions (.docx, .pdf, etc.)
+- Time stamp should be by user local time, not server time
+- Better way to handle duplicate shared files
+- Thumbnails under shared by me and shared with me section should be viewable
+- Fix get auth user: GET /auth/users/1 HTTP/1.1" 403 -> Working path is: 127.0.0.1 - [04/Dec/2024 09:07:04] "POST /auth/user/by-id HTTP/1.1" 200 
+- Email address should not be case sensitive 
+
+MUST TO DO TODAY
+- Share functionality on all files page (single and bulk) --> DONE
+- search functionality must include shared with me and shared by me files
+- Edit recent files in dashboard
+- Consider changing UI in dashboard to tabs instead of dropdown
