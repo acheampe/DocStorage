@@ -503,6 +503,13 @@ export default function Dashboard() {
     }
   }, []);
 
+  const handleShareSuccess = () => {
+    setSuccessMessage('Document shared successfully!');
+    setTimeout(() => {
+      setSuccessMessage(null);
+    }, 3000);
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-white">
       {/* Navigation Bar */}
@@ -655,6 +662,7 @@ export default function Dashboard() {
           <PreviewModal
             previewData={previewData}
             onClose={() => setPreviewData(null)}
+            onShare={() => setShareModalOpen(previewData.docId)}
           />
         )}
 
@@ -663,6 +671,7 @@ export default function Dashboard() {
           <ShareModal
             onClose={() => setShareModalOpen(-1)}
             selectedFiles={[shareModalOpen]}
+            onSuccess={handleShareSuccess}
           />
         )}
       </main>
@@ -765,17 +774,29 @@ function FileCard({ file, imageUrl, onPreview, onShare, isShared }: FileCardProp
 interface PreviewModalProps {
   previewData: PreviewData;
   onClose: () => void;
+  onShare?: () => void;
 }
 
-function PreviewModal({ previewData, onClose }: PreviewModalProps) {
+function PreviewModal({ previewData, onClose, onShare }: PreviewModalProps) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[90vh] flex flex-col">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xl font-bold text-navy">{previewData.filename}</h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-            <span className="material-symbols-rounded">close</span>
-          </button>
+          <div className="flex items-center gap-4">
+            {onShare && (
+              <button 
+                onClick={onShare}
+                className="text-navy hover:text-gold transition-colors"
+                title="Share this document"
+              >
+                <span className="material-symbols-rounded">share</span>
+              </button>
+            )}
+            <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+              <span className="material-symbols-rounded">close</span>
+            </button>
+          </div>
         </div>
         <div className="overflow-auto flex-grow">
           {previewData.type === 'image' ? (

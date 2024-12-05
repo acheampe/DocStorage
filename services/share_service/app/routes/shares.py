@@ -26,6 +26,21 @@ def create_share(current_user):
         data = request.get_json()
         print(f"Share Service: Parsed JSON data: {data}")
         
+        # Check if share already exists
+        existing_share = SharedDocument.query.filter_by(
+            doc_id=data['doc_id'],
+            owner_id=current_user['user_id'],
+            recipient_id=data['recipient_id'],
+            status='active'
+        ).first()
+        
+        if existing_share:
+            print("Share Service: Share already exists, returning existing share")
+            return jsonify({
+                'message': 'Document is already shared with this user',
+                'share': existing_share.to_dict()
+            }), 200
+        
         # Validate required fields
         required_fields = ['doc_id', 'recipient_id', 'document_metadata']
         for field in required_fields:
