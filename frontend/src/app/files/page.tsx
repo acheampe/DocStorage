@@ -42,67 +42,89 @@ interface FileCardProps {
   onPreview: () => void;
   onShare?: () => void;
   isShared?: boolean;
+  isSelected?: boolean;
+  onSelect?: (docId: number) => void;
 }
 
-function FileCard({ file, imageUrl, onPreview, onShare, isShared }: FileCardProps) {
+function FileCard({ file, imageUrl, onPreview, onShare, isShared, isSelected, onSelect }: FileCardProps) {
   const displayDate = file.upload_date || new Date().toISOString();
 
   return (
-    <div
-      onClick={onPreview}
-      className="bg-white p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow cursor-pointer"
+    <div 
+      className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
     >
-      <div className="relative">
-        {file.file_type?.startsWith('image/') ? (
-          <div className="w-full h-40 flex items-center justify-center bg-gray-50">
-            {imageUrl ? (
-              <img
-                src={imageUrl}
-                alt={file.original_filename}
-                className="w-full h-40 object-cover rounded"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.style.display = 'none';
-                  const parent = target.parentElement;
-                  if (parent) {
-                    const icon = document.createElement('span');
-                    icon.className = 'material-symbols-rounded text-navy text-4xl';
-                    icon.textContent = getFileIcon(file.original_filename);
-                    parent.appendChild(icon);
-                  }
-                }}
-              />
+      {!isShared && onSelect && (
+        <div 
+          className="absolute top-2 left-2 z-10"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect(file.doc_id);
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => {}}
+            className="w-5 h-5 cursor-pointer"
+          />
+        </div>
+      )}
+
+      <div onClick={onPreview}>
+        <div className="mb-2">
+          <div className="relative">
+            {file.file_type?.startsWith('image/') ? (
+              <div className="w-full h-40 flex items-center justify-center bg-gray-50">
+                {imageUrl ? (
+                  <img
+                    src={imageUrl}
+                    alt={file.original_filename}
+                    className="w-full h-40 object-cover rounded"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                      const parent = target.parentElement;
+                      if (parent) {
+                        const icon = document.createElement('span');
+                        icon.className = 'material-symbols-rounded text-navy text-4xl';
+                        icon.textContent = getFileIcon(file.original_filename);
+                        parent.appendChild(icon);
+                      }
+                    }}
+                  />
+                ) : (
+                  <span className="material-symbols-rounded text-navy text-4xl animate-pulse">
+                    hourglass_empty
+                  </span>
+                )}
+              </div>
             ) : (
-              <span className="material-symbols-rounded text-navy text-4xl animate-pulse">
-                hourglass_empty
-              </span>
+              <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
+                <span className="material-symbols-rounded text-navy text-4xl">
+                  {getFileIcon(file.original_filename)}
+                </span>
+              </div>
             )}
           </div>
-        ) : (
-          <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
-            <span className="material-symbols-rounded text-navy text-4xl">
-              {getFileIcon(file.original_filename)}
-            </span>
+          <h4 className="font-bold text-navy truncate">{file.original_filename}</h4>
+          <div className="flex justify-between items-center mt-2">
+            <p className="text-sm text-gray-600">
+              {formatDate(displayDate)}
+            </p>
+            {!isShared && onShare && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onShare();
+                }}
+                className="text-navy hover:text-gold transition-colors"
+                title="Share this document"
+              >
+                <span className="material-symbols-rounded">share</span>
+              </button>
+            )}
           </div>
-        )}
-      </div>
-      <h4 className="font-bold text-navy truncate">{file.original_filename}</h4>
-      <div className="flex justify-between items-center mt-2">
-        <p className="text-sm text-gray-600">
-          {formatDate(displayDate)}
-        </p>
-        {!isShared && onShare && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onShare();
-            }}
-            className="text-navy hover:text-gold transition-colors"
-            title="Share this document"
-          >
-            <span className="material-symbols-rounded">share</span>
-          </button>
-        )}
+        </div>
       </div>
     </div>
   );
@@ -767,6 +789,8 @@ export default function Files() {
                     )}
                     onShare={!file.is_shared ? () => setShareModalOpen(file.doc_id) : undefined}
                     isShared={file.is_shared}
+                    isSelected={selectedFiles.includes(file.doc_id)}
+                    onSelect={handleFileSelect}
                   />
                 );
               })
@@ -774,11 +798,13 @@ export default function Files() {
                 <>
                   {activeTab === 'my-files' && files.map((file, index) => (
                     <FileCard
-                      key={`my-${file.doc_id}-${index}`}
+                      key={`file-${file.doc_id}`}
                       file={file}
                       imageUrl={imageUrls[file.doc_id]}
                       onPreview={() => handlePreview(file.doc_id, false, file.original_filename)}
                       onShare={() => setShareModalOpen(file.doc_id)}
+                      isSelected={selectedFiles.includes(file.doc_id)}
+                      onSelect={handleFileSelect}
                     />
                   ))}
 
@@ -789,6 +815,8 @@ export default function Files() {
                       imageUrl={imageUrls[file.doc_id]}
                       onPreview={() => handlePreview(file.doc_id, true, file.original_filename, file.share_id)}
                       isShared={true}
+                      isSelected={selectedFiles.includes(file.doc_id)}
+                      onSelect={handleFileSelect}
                     />
                   ))}
                 </>

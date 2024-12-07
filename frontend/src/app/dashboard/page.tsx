@@ -111,7 +111,7 @@ export default function Dashboard() {
     shared: false,
     sharedByMe: false
   });
-  const [sharedWithMeFiles, setSharedWithMeFiles] = useState<any[]>([]);
+  const [sharedWithMeFiles, setSharedWithMeFiles] = useState<SharedFile[]>([]);
   const [sharedByMeFiles, setSharedByMeFiles] = useState<SharedFile[]>([]);
   const [activeTab, setActiveTab] = useState<'recent' | 'shared-with-me' | 'shared-by-me'>('recent');
 
@@ -219,40 +219,75 @@ export default function Dashboard() {
     const fetchSharedFiles = async () => {
       try {
         const token = localStorage.getItem('token');
-        if (!token) {
-          console.error('No token found');
+        const userData = localStorage.getItem('user');
+        if (!token || !userData) {
+          console.error('No token or user data found');
           return;
         }
 
+        const user = JSON.parse(userData);
+        console.log('Fetching shared files for user:', user.user_id);
+
         // Fetch files shared with me
-        const withMeResponse = await fetch('http://127.0.0.1:5000/share/shared-with-me', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          },
-          credentials: 'include'
-        });
+        const withMeResponse = await fetch(
+          'http://127.0.0.1:5000/share/shared-with-me',
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            },
+            credentials: 'include'
+          }
+        );
 
         // Fetch files shared by me
-        const byMeResponse = await fetch('http://127.0.0.1:5000/share/shared-by-me', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          },
-          credentials: 'include'
-        });
+        const byMeResponse = await fetch(
+          'http://127.0.0.1:5000/share/shared-by-me',
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            },
+            credentials: 'include'
+          }
+        );
 
         if (!withMeResponse.ok || !byMeResponse.ok) {
-          throw new Error('Failed to fetch shared files');
+          console.error('Shared files response error:', 
+            withMeResponse.status, byMeResponse.status);
+          const withMeText = await withMeResponse.text();
+          const byMeText = await byMeResponse.text();
+          console.error('Response content:', withMeText, byMeText);
+          return;
         }
 
         const withMeData = await withMeResponse.json();
         const byMeData = await byMeResponse.json();
 
-        // Update state with the fetched data directly without verification
-        setSharedWithMeFiles(withMeData.shares || []);
-        setSharedByMeFiles(byMeData.shares || []);
+        console.log('Shared with me data:', withMeData);
+        console.log('Shared by me data:', byMeData);
+
+        // Process and set the shared files with proper data structure
+        const processedWithMeFiles = (withMeData.shares || []).map((file: any) => ({
+          ...file,
+          original_filename: file.original_filename || file.filename || '',
+          file_type: file.file_type || 'application/octet-stream',
+          is_shared: true
+        }));
+
+        const processedByMeFiles = (byMeData.shares || []).map((file: any) => ({
+          ...file,
+          original_filename: file.original_filename || file.filename || '',
+          file_type: file.file_type || 'application/octet-stream',
+          is_shared: true
+        }));
+
+        setSharedWithMeFiles(processedWithMeFiles);
+        setSharedByMeFiles(processedByMeFiles);
 
       } catch (error) {
         console.error('Error fetching shared files:', error);
+        // Set empty arrays on error
+        setSharedWithMeFiles([]);
+        setSharedByMeFiles([]);
       }
     };
 
@@ -270,27 +305,40 @@ export default function Dashboard() {
   const fetchThumbnail = async (docId: number, isShared: boolean = false, shareId?: number) => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(
-        isShared 
-          ? `http://127.0.0.1:5000/share/preview/${shareId}/thumbnail`
-          : `http://127.0.0.1:5000/docs/file/${docId}/thumbnail`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          },
-          credentials: 'include'
-        }
-      );
+      if (!token) {
+        console.error('No token found for thumbnail fetch');
+        return null;
+      }
+
+      // Get thumbnail
+      const thumbnailEndpoint = isShared && shareId
+        ? `http://127.0.0.1:5000/share/preview/${shareId}/thumbnail`
+        : `http://127.0.0.1:5000/docs/file/${docId}/thumbnail`;
+
+      console.log(`Fetching thumbnail from: ${thumbnailEndpoint}`);
+      
+      const response = await fetch(thumbnailEndpoint, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        credentials: 'include'
+      });
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        console.warn(`Thumbnail fetch failed for docId=${docId}, status=${response.status}`);
+        return null;
       }
       
       const blob = await response.blob();
+      if (blob.size === 0) {
+        console.warn(`Empty thumbnail received for docId=${docId}`);
+        return null;
+      }
+
       return URL.createObjectURL(blob);
     } catch (error) {
       console.error('Error fetching thumbnail:', error);
-      return '/placeholder-image.png';
+      return null;
     }
   };
 
@@ -298,11 +346,11 @@ export default function Dashboard() {
     const loadImages = async () => {
       const newImageUrls: ImageUrls = {};
       
-      // Load thumbnails only for image files in recent files
+      // Load thumbnails for recent files
       const recentImageFiles = recentFiles.filter(file => file.file_type?.startsWith('image/'));
       for (const file of recentImageFiles) {
         try {
-          const thumbnailUrl = await fetchThumbnail(file.doc_id, false);
+          const thumbnailUrl = await fetchThumbnail(file.doc_id);
           if (thumbnailUrl) {
             newImageUrls[file.doc_id] = thumbnailUrl;
           }
@@ -311,11 +359,13 @@ export default function Dashboard() {
         }
       }
       
-      // Load thumbnails only for image files in shared files
-      const sharedImageFiles = sharedWithMeFiles.filter(file => file.file_type?.startsWith('image/'));
+      // Load thumbnails for shared files
+      const sharedImageFiles = [...sharedWithMeFiles, ...sharedByMeFiles]
+        .filter(file => file.file_type?.startsWith('image/'));
+        
       for (const file of sharedImageFiles) {
         try {
-          const thumbnailUrl = await fetchThumbnail(file.doc_id, true);
+          const thumbnailUrl = await fetchThumbnail(file.doc_id, true, file.share_id);
           if (thumbnailUrl) {
             newImageUrls[file.doc_id] = thumbnailUrl;
           }
@@ -327,14 +377,16 @@ export default function Dashboard() {
       setImageUrls(newImageUrls);
     };
 
-    if (recentFiles.length > 0 || sharedWithMeFiles.length > 0) {
+    if (recentFiles.length > 0 || sharedWithMeFiles.length > 0 || sharedByMeFiles.length > 0) {
       loadImages();
     }
 
     return () => {
-      Object.values(imageUrls).forEach(url => URL.revokeObjectURL(url));
+      Object.values(imageUrls).forEach(url => {
+        if (url) URL.revokeObjectURL(url);
+      });
     };
-  }, [recentFiles, sharedWithMeFiles]);
+  }, [recentFiles, sharedWithMeFiles, sharedByMeFiles]);
 
   // Modify the search useEffect
   useEffect(() => {
@@ -692,52 +744,91 @@ export default function Dashboard() {
           </div>
         ) : null}
 
-        {/* Files Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {searchQuery ? 
-            searchResults.map((file, index) => (
-              <FileCard
-                key={`search-${file.doc_id}-${file.share_id || 'private'}-${index}`}
-                file={file}
-                imageUrl={imageUrls[file.doc_id]}
-                onPreview={() => handlePreview(file.doc_id, file.is_shared, file.original_filename, file.share_id)}
-                onShare={!file.is_shared ? () => setShareModalOpen(file.doc_id) : undefined}
-                isShared={file.is_shared}
-              />
-            ))
-            : (
-              <>
-                {activeTab === 'recent' && recentFiles.map((file, index) => (
-                  <FileCard
-                    key={`recent-${file.doc_id}-${index}`}
-                    file={file}
-                    imageUrl={imageUrls[file.doc_id]}
-                    onPreview={() => handlePreview(file.doc_id, file.is_shared, file.original_filename)}
-                    onShare={() => setShareModalOpen(file.doc_id)}
-                  />
-                ))}
+        {/* Files Grid with proper spacing */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 p-4">
+          {/* Recent Files Tab */}
+          {activeTab === 'recent' && (
+            <>
+              {recentFiles.length > 0 ? (
+                recentFiles.map((file, index) => (
+                  <div key={`recent-${file.doc_id}-${index}`} className="w-full">
+                    <FileCard
+                      file={file}
+                      imageUrl={imageUrls[file.doc_id]}
+                      onPreview={() => handlePreview(file.doc_id, false, file.original_filename)}
+                      onShare={() => setShareModalOpen(file.doc_id)}
+                    />
+                  </div>
+                ))
+              ) : (
+                <div className="col-span-full text-center py-8 text-gray-500">
+                  No recent files
+                </div>
+              )}
+            </>
+          )}
 
-                {activeTab === 'shared-with-me' && sharedWithMeFiles.map((file, index) => (
-                  <FileCard
-                    key={`shared-with-${file.doc_id}-${file.share_id}-${index}`}
-                    file={file}
-                    imageUrl={imageUrls[file.doc_id]}
-                    onPreview={() => handlePreview(file.doc_id, true, file.original_filename, file.share_id)}
-                    isShared={true}
-                  />
-                ))}
+          {activeTab === 'shared-with-me' && (
+            <>
+              {sharedWithMeFiles.length > 0 ? (
+                sharedWithMeFiles.map((file, index) => (
+                  <div key={`shared-with-${file.doc_id}-${file.share_id}-${index}`} className="w-full">
+                    <FileCard
+                      file={{
+                        ...file,
+                        original_filename: file.original_filename || file.filename,
+                        file_type: file.file_type || 'application/octet-stream',
+                        is_shared: true
+                      }}
+                      imageUrl={imageUrls[file.doc_id]}
+                      onPreview={() => handlePreview(
+                        file.doc_id,
+                        true,
+                        file.original_filename || file.filename || 'Untitled',
+                        file.share_id
+                      )}
+                      isShared={true}
+                    />
+                  </div>
+                ))
+              ) : (
+                <div className="col-span-full text-center py-8 text-gray-500">
+                  No files have been shared with you
+                </div>
+              )}
+            </>
+          )}
 
-                {activeTab === 'shared-by-me' && sharedByMeFiles.map((file, index) => (
-                  <FileCard
-                    key={`shared-by-${file.doc_id}-${file.share_id}-${index}`}
-                    file={file}
-                    imageUrl={imageUrls[file.doc_id]}
-                    onPreview={() => handlePreview(file.doc_id, true, file.original_filename, file.share_id)}
-                    isShared={true}
-                  />
-                ))}
-              </>
-            )}
+          {activeTab === 'shared-by-me' && (
+            <>
+              {sharedByMeFiles.length > 0 ? (
+                sharedByMeFiles.map((file, index) => (
+                  <div key={`shared-by-${file.doc_id}-${file.share_id}-${index}`} className="w-full">
+                    <FileCard
+                      file={{
+                        ...file,
+                        original_filename: file.original_filename || file.filename,
+                        file_type: file.file_type || 'application/octet-stream',
+                        is_shared: true
+                      }}
+                      imageUrl={imageUrls[file.doc_id]}
+                      onPreview={() => handlePreview(
+                        file.doc_id,
+                        true,
+                        file.original_filename || file.filename,
+                        file.share_id
+                      )}
+                      isShared={true}
+                    />
+                  </div>
+                ))
+              ) : (
+                <div className="col-span-full text-center py-8 text-gray-500">
+                  You haven't shared any files yet
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {/* Preview Modal */}
