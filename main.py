@@ -352,7 +352,7 @@ def index_document():
 
     try:
         service_url = SERVICES['search']
-        target_url = f"{service_url}/search/index"
+        target_url = f"{service_url}/index"
         
         print(f"Gateway: Forwarding POST request to: {target_url}")
         

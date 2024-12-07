@@ -84,6 +84,15 @@ const deduplicateSearchResults = (results: File[]) => {
   });
 };
 
+// Normalize text by removing special characters and extra spaces
+const normalizeText = (text: string): string => {
+  return text
+    .toLowerCase()
+    .replace(/[_-]/g, ' ')    // Replace underscores and hyphens with spaces
+    .replace(/\s+/g, ' ')     // Replace multiple spaces with single space
+    .trim();                  // Remove leading/trailing spaces
+};
+
 export default function Dashboard() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
@@ -349,6 +358,9 @@ export default function Dashboard() {
           return;
         }
 
+        console.log("\n=== Frontend Search Debug ===");
+        console.log("Search query:", currentQuery);
+
         const response = await fetch(
           `http://127.0.0.1:5000/search?q=${encodeURIComponent(currentQuery)}`,
           {
@@ -369,20 +381,39 @@ export default function Dashboard() {
           throw new Error(data.error);
         }
 
-        // Split the search query into parts
-        const queryParts = currentQuery.split(' ').filter(part => part.length > 0);
+        console.log("Backend returned results:", data.results.length);
+        console.log("Sample filenames:", data.results.slice(0, 3).map((f: File) => f.original_filename));
+
+        // Split the search query into parts and normalize
+        const queryParts = currentQuery
+          .split(/[\s_]+/)
+          .filter(part => part.length > 0);
         
+        console.log("Query parts:", queryParts);
+
         // Filter results to match all parts of the query
         const filteredResults = data.results.filter((file: File) => {
-          const filename = file.original_filename.toLowerCase();
-          // Check if all parts of the query are in the filename
-          return queryParts.every(part => 
-            filename.includes(part) || filename.includes(part.replace(' ', '_'))
-          );
+          if (!file.original_filename) return false;
+          
+          const normalizedFilename = normalizeText(file.original_filename);
+          const normalizedParts = queryParts.map(part => normalizeText(part));
+          
+          console.log("\nChecking file:", normalizedFilename);
+          console.log("Using normalized parts:", normalizedParts);
+          
+          return normalizedParts.every(part => {
+            const hasMatch = normalizedFilename.includes(part);
+            console.log(`- Part "${part}": ${hasMatch ? '✓' : '✗'}`);
+            return hasMatch;
+          });
         });
+
+        console.log("\nFiltered results:", filteredResults.length);
+        console.log("Filtered filenames:", filteredResults.map(f => f.original_filename));
 
         if (searchQuery.trim() === currentQuery) {
           const uniqueResults = deduplicateSearchResults(filteredResults);
+          console.log("Final unique results:", uniqueResults.length);
           setSearchResults(uniqueResults);
         }
 

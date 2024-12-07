@@ -149,10 +149,14 @@ def search_documents(current_user):
                 })
 
 
-        # Ensure filtered results strictly match the query
+        # Split query into words and check if all words are in filename
+        query_words = query.lower().split()
         filtered_results = [
             result for result in formatted_results
-            if result['original_filename'] and query.lower() in result['original_filename'].lower()
+            if result['original_filename'] and all(
+                word in result['original_filename'].lower().replace('_', ' ')
+                for word in query_words
+            )
         ]
 
         print(f"Filtered Results: {filtered_results}")
