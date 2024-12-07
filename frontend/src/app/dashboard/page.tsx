@@ -353,51 +353,60 @@ export default function Dashboard() {
 
         const token = localStorage.getItem('token');
         if (!token) {
-          console.error('No token found');
+          setSearchError('Authentication token not found');
           setIsSearching(false);
           return;
         }
 
-        const response = await fetch(
-          `http://127.0.0.1:5000/search?q=${encodeURIComponent(currentQuery)}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            },
-            credentials: 'include'
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`Search failed: ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log('Raw search results:', data.results);
-
-        // Apply the new filter logic
-        const validResults = data.results.filter((searchResult: File) => {
-          const searchTerm = searchQuery.toLowerCase();
-          const filename = searchResult.original_filename?.toLowerCase() || '';
-          const filenameMatches = filename.includes(searchTerm);
-          
-          return filenameMatches && (
-            recentFiles.some(file => file.doc_id === searchResult.doc_id) || 
-            sharedWithMeFiles.some(file => file.doc_id === searchResult.doc_id)
+        // Add error handling for token validation
+        try {
+          const response = await fetch(
+            `http://127.0.0.1:5000/search?q=${encodeURIComponent(currentQuery)}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              },
+              credentials: 'include'
+            }
           );
-        });
 
-        console.log('Filtered search results:', validResults);
+          if (response.status === 401 || response.status === 403) {
+            setSearchError('Authentication failed. Please try logging in again.');
+            return;
+          }
 
-        if (searchQuery.trim() === currentQuery) {
-          const uniqueResults = deduplicateSearchResults(validResults);
-          setSearchResults(uniqueResults);
+          if (!response.ok) {
+            throw new Error(`Search failed: ${response.status}`);
+          }
+
+          const data = await response.json();
+          console.log('Raw search results:', data.results);
+
+          // Apply the new filter logic
+          const validResults = data.results.filter((searchResult: File) => {
+            const searchTerm = searchQuery.toLowerCase();
+            const filename = searchResult.original_filename?.toLowerCase() || '';
+            const filenameMatches = filename.includes(searchTerm);
+            
+            return filenameMatches && (
+              recentFiles.some(file => file.doc_id === searchResult.doc_id) || 
+              sharedWithMeFiles.some(file => file.doc_id === searchResult.doc_id)
+            );
+          });
+
+          console.log('Filtered search results:', validResults);
+
+          if (searchQuery.trim() === currentQuery) {
+            const uniqueResults = deduplicateSearchResults(validResults);
+            setSearchResults(uniqueResults);
+          }
+
+        } catch (error) {
+          console.error('Search error:', error);
+          setSearchError(error instanceof Error ? error.message : 'Search failed');
+          setSearchResults([]);
         }
-
-      } catch (error) {
-        console.error('Search error:', error);
-        setSearchError(error instanceof Error ? error.message : 'Search failed');
-        setSearchResults([]);
       } finally {
         setIsSearching(false);
       }
