@@ -21,6 +21,7 @@ TO DOS
 - File Tabs - List Order from newest to oldest 
 - Make default recent files into last 8 most recent uploaded files, for aesthetics
 - Add more filter types to search filter (file type, date uploaded, date range)
+- Renamed files can't be found in search results - consider reindexing renamed files route, like with upload/new files
 
 MUST TO DO TOMORROW
 - Finish a Files page feature
