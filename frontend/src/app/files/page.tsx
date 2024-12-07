@@ -188,57 +188,42 @@ export default function Files() {
         setIsSearching(true);
         setSearchError(null);
 
-        const token = localStorage.getItem('token');
-        if (!token) {
-          console.error('No token found');
-          setIsSearching(false);
-          return;
-        }
-
-        console.log("\n=== Frontend Search Debug ===");
-        console.log("Search query:", currentQuery);
-
-        const response = await fetch(
-          `http://127.0.0.1:5000/search?q=${encodeURIComponent(currentQuery)}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            },
-            credentials: 'include'
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`Search failed: ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log('Raw search results:', data.results);
-
-        // Filter search results to include files that exist in either files or sharedWithMeFiles array
-        const validResults = data.results.filter((searchResult: File) => {
-          const searchTerm = searchQuery.toLowerCase();
-          const filename = searchResult.original_filename?.toLowerCase() || '';
-          const filenameMatches = filename.includes(searchTerm);
+        // Local filtering first
+        const localResults = [
+          ...files.map(file => ({
+            ...file,
+            is_shared: false,
+            content_id: file.doc_id // Ensure content_id is preserved for personal files
+          })),
+          ...sharedWithMeFiles.map(file => ({
+            ...file,
+            is_shared: true,
+            content_id: file.doc_id,
+            share_id: file.share_id
+          }))
+        ].filter(file => {
+          const filename = file.original_filename?.toLowerCase() || '';
+          const normalizedQuery = normalizeText(currentQuery);
+          const normalizedFilename = normalizeText(filename);
           
-          return filenameMatches && (
-            files.some(file => file.doc_id === searchResult.doc_id) || 
-            sharedWithMeFiles.some(file => file.doc_id === searchResult.doc_id)
-          );
+          return normalizedFilename.includes(normalizedQuery);
         });
 
-        console.log('Filtered search results:', validResults);
+        // Sort and deduplicate results
+        const sortedResults = localResults.sort((a, b) => {
+          const dateA = new Date(a.upload_date || a.shared_date || '').getTime();
+          const dateB = new Date(b.upload_date || b.shared_date || '').getTime();
+          return dateB - dateA;
+        });
 
-        if (searchQuery.trim() === currentQuery) {
-          const uniqueResults = deduplicateSearchResults(validResults);
-          setSearchResults(uniqueResults);
-        }
+        const uniqueResults = deduplicateSearchResults(sortedResults);
+        setSearchResults(uniqueResults);
+        setIsSearching(false);
 
       } catch (error) {
         console.error('Search error:', error);
         setSearchError(error instanceof Error ? error.message : 'Search failed');
         setSearchResults([]);
-      } finally {
         setIsSearching(false);
       }
     };
