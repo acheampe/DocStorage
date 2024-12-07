@@ -104,6 +104,9 @@ def create_share(current_user):
 @share_bp.route('/share/shared-with-me', methods=['GET'])
 @require_auth
 def get_shared_with_me(current_user):
+    """
+    Get all shares for the current user that are active
+    """
     try:
         recipient_id = current_user['user_id']
         print(f"Fetching shares for recipient ID: {recipient_id}")
@@ -117,14 +120,17 @@ def get_shared_with_me(current_user):
         share_list = []
         
         for share in shares:
+            # Use data directly from the share record
             share_dict = share.to_dict()
-            # Use the original_filename from SharedDocument table
             share_dict.update({
-                'filename': share.original_filename,  # Use this instead of generic "Document X"
+                'filename': share.original_filename,
+                'file_type': mimetypes.guess_type(share.original_filename)[0],
                 'doc_id': share.doc_id,
                 'owner_id': share.owner_id,
                 'shared_date': share.shared_date.isoformat() if share.shared_date else None,
-                'file_path': share.file_path  # Include file_path for preview/thumbnail
+                'file_path': share.file_path,
+                'share_id': share.share_id,  # Include share_id for thumbnail access
+                'thumbnail_url': f"/share/preview/{share.share_id}/thumbnail"  # Add thumbnail URL
             })
             share_list.append(share_dict)
             
@@ -136,47 +142,40 @@ def get_shared_with_me(current_user):
         return jsonify({'error': str(e)}), 500
 
 @share_bp.route('/share/shared-by-me', methods=['GET'])
-@require_auth  # Change to require_auth to be consistent
+@require_auth
 def get_shared_by_me(current_user):
     try:
-        owner_id = current_user['user_id']  # Use the authenticated user's ID directly
+        owner_id = current_user['user_id']
         print(f"Fetching shares by owner ID: {owner_id}")
             
-        shares = SharedDocument.query.filter_by(
+        # Get files shared by me
+        shares_by_me = SharedDocument.query.filter_by(
             owner_id=owner_id,
             status='active'
         ).all()
         
-        print(f"Found {len(shares)} shares by owner")
+        # Get files shared with me
+        shares_with_me = SharedDocument.query.filter_by(
+            recipient_id=owner_id,
+            status='active'
+        ).all()
+        
+        print(f"Found {len(shares_by_me)} shares by owner and {len(shares_with_me)} shares with owner")
         share_list = []
         
-        # Get document details through gateway
-        gateway_url = os.getenv('GATEWAY_URL', 'http://localhost:5000')
-        
-        for share in shares:
+        # Process both sets of shares
+        for share in shares_by_me + shares_with_me:
             share_dict = share.to_dict()
-            print(f"Processing share: {share_dict}")
-            
-            # Fetch document metadata through gateway
-            doc_response = requests.get(
-                f"{gateway_url}/docs/file/{share.doc_id}",
-                headers={'Authorization': request.headers.get('Authorization')}
-            )
-            
-            if doc_response.status_code == 200:
-                doc_data = doc_response.json()
-                share_dict.update({
-                    'filename': doc_data.get('original_filename', f"Document {share.doc_id}"),
-                    'file_type': doc_data.get('file_type'),
-                    'doc_id': share.doc_id
-                })
-            else:
-                print(f"Failed to fetch document metadata: Status {doc_response.status_code}")
-                share_dict.update({
-                    'filename': f"Document {share.doc_id}",
-                    'doc_id': share.doc_id
-                })
-                
+            share_dict.update({
+                'filename': share.original_filename,
+                'file_type': mimetypes.guess_type(share.original_filename)[0],
+                'doc_id': share.doc_id,
+                'shared_date': share.shared_date.isoformat() if share.shared_date else None,
+                'file_path': share.file_path,
+                'share_id': share.share_id,
+                'thumbnail_url': f"/share/preview/{share.share_id}/thumbnail",
+                'access_type': 'owner' if share.owner_id == owner_id else 'recipient'
+            })
             share_list.append(share_dict)
             
         return jsonify({'shares': share_list}), 200
@@ -282,8 +281,7 @@ def get_shared_content(current_user, share_id):
 def check_file_access(current_user, doc_id):
     try:
         user_id = current_user['user_id']
-        print(f"Checking access for doc_id {doc_id} and user {user_id}")
-
+        
         # Check if user is either owner or recipient of the shared document
         share = SharedDocument.query.filter(
             SharedDocument.doc_id == doc_id,
@@ -295,15 +293,15 @@ def check_file_access(current_user, doc_id):
         ).first()
 
         if not share:
-            print(f"No active share found for doc_id {doc_id} and user {user_id}")
             return jsonify({
-                'error': 'Access denied',
-                'has_access': False
-            }), 403
+                'has_access': False,
+                'is_shared': False
+            }), 200
 
         # Return success with share details
         return jsonify({
             'has_access': True,
+            'is_shared': True,
             'access_type': 'owner' if share.owner_id == user_id else 'recipient',
             'share_id': share.share_id,
             'original_filename': share.original_filename
@@ -313,3 +311,121 @@ def check_file_access(current_user, doc_id):
         print(f"Error checking file access: {str(e)}")
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500 
+
+# Add a new endpoint for thumbnails
+@share_bp.route('/share/preview/<int:share_id>/thumbnail', methods=['GET'])
+@require_auth
+def get_shared_thumbnail(current_user, share_id):
+    try:
+        share = SharedDocument.query.filter_by(
+            share_id=share_id,
+            status='active'
+        ).first_or_404()
+        
+        # Check access rights
+        user_id = current_user['user_id']
+        if user_id != share.owner_id and user_id != share.recipient_id:
+            return jsonify({'error': 'Access denied'}), 403
+
+        # Get the file path
+        file_path = Path(share.file_path)
+        if not file_path.exists():
+            return jsonify({'error': 'File not found'}), 404
+
+        # Get the file's mime type
+        mime_type = mimetypes.guess_type(str(file_path))[0]
+        if not mime_type:
+            mime_type = 'application/octet-stream'
+
+        return send_file(
+            file_path,
+            mimetype=mime_type,
+            as_attachment=False
+        )
+
+    except Exception as e:
+        print(f"Error serving shared thumbnail: {str(e)}")
+        return jsonify({'error': str(e)}), 500 
+
+@share_bp.route('/share/file/<int:doc_id>/metadata', methods=['GET'])
+@require_auth
+def get_shared_file_metadata(current_user, doc_id):
+    """
+    Get metadata for a shared file (whether shared by or with the user).
+    """
+    try:
+        user_id = current_user['user_id']
+        
+        # Find the share record where the user is either owner or recipient
+        share = SharedDocument.query.filter(
+            SharedDocument.doc_id == doc_id,
+            SharedDocument.status == 'active',
+            db.or_(
+                SharedDocument.owner_id == user_id,
+                SharedDocument.recipient_id == user_id
+            )
+        ).first()
+
+        if not share:
+            return jsonify({'error': 'Shared document not found'}), 404
+            
+        # Return metadata as JSON
+        return jsonify({
+            'doc_id': share.doc_id,
+            'original_filename': share.original_filename,
+            'file_path': share.file_path,
+            'file_type': mimetypes.guess_type(share.original_filename)[0],
+            'shared_date': share.shared_date.isoformat() if share.shared_date else None,
+            'owner_id': share.owner_id,
+            'recipient_id': share.recipient_id,
+            'share_id': share.share_id,
+            'access_type': 'owner' if share.owner_id == user_id else 'recipient'
+        })
+        
+    except Exception as e:
+        print(f"Error retrieving shared document metadata: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': 'Internal server error'}), 500 
+
+@share_bp.route('/share/file/metadata', methods=['GET'])
+@require_auth
+def get_all_shared_file_metadata(current_user):
+    """
+    Get metadata for all files shared with or by the user
+    """
+    try:
+        user_id = current_user['user_id']
+        
+        # Find all shares where user is either owner or recipient
+        shares = SharedDocument.query.filter(
+            SharedDocument.status == 'active',
+            db.or_(
+                SharedDocument.owner_id == user_id,
+                SharedDocument.recipient_id == user_id
+            )
+        ).all()
+
+        files_metadata = []
+        for share in shares:
+            metadata = {
+                'doc_id': share.doc_id,
+                'original_filename': share.original_filename,
+                'file_path': share.file_path,
+                'file_type': mimetypes.guess_type(share.original_filename)[0],
+                'shared_date': share.shared_date.isoformat() if share.shared_date else None,
+                'owner_id': share.owner_id,
+                'recipient_id': share.recipient_id,
+                'share_id': share.share_id,
+                'access_type': 'owner' if share.owner_id == user_id else 'recipient'
+            }
+            files_metadata.append(metadata)
+            
+        return jsonify({
+            'files': files_metadata,
+            'total': len(files_metadata)
+        }), 200
+        
+    except Exception as e:
+        print(f"Error retrieving shared files metadata: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': 'Internal server error'}), 500 

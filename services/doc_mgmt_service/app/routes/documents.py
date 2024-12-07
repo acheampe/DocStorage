@@ -233,14 +233,39 @@ def upload_document():
             
             # After successful upload, index the document through the API gateway
             try:
+                # Extract searchable content based on file type
+                content_text = ''
+                
+                # Include filename in searchable content
+                content_text = f"{document.original_filename} "
+                
+                if document.file_type.startswith('text/'):
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content_text += f.read()
+                elif document.file_type == 'application/pdf':
+                    import pdfplumber
+                    with pdfplumber.open(file_path) as pdf:
+                        content_text += ' '.join(page.extract_text() or '' for page in pdf.pages)
+                elif document.file_type in ['application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']:
+                    doc = DocxDocument(file_path)
+                    content_text += ' '.join(paragraph.text for paragraph in doc.paragraphs)
+                elif document.file_type.startswith('image/'):
+                    # For images, include filename and any description
+                    content_text += f"{document.description} image"
+                
+                print(f"Extracted content: {content_text[:100]}...")  # Debug log
+                
                 index_payload = {
                     'doc_id': document.doc_id,
-                    'content_text': '',
+                    'content_text': content_text,
                     'doc_metadata': {
-                        'filename': document.original_filename,
+                        'filename': document.filename,
+                        'original_filename': document.original_filename,
                         'upload_date': document.upload_date.isoformat(),
                         'file_type': document.file_type,
-                        'description': document.description
+                        'description': document.description,
+                        'user_id': document.user_id,
+                        'last_modified': document.last_modified.isoformat() if document.last_modified else None
                     }
                 }
                 print(f"Sending index request with payload: {index_payload}")  # Debug log
@@ -711,6 +736,37 @@ def rename_file(doc_id):
                 pass  # If restoration fails, we can't do much
             print(f"Database error: {str(e)}")
             return jsonify({'error': 'Failed to update database'}), 500
+        
+        # Update search index
+        index_payload = {
+            'doc_id': doc.doc_id,
+            'content_text': f"{doc.original_filename} ",  # Start with filename
+            'doc_metadata': {
+                'filename': doc.filename,
+                'original_filename': doc.original_filename,
+                'upload_date': doc.upload_date.isoformat(),
+                'file_type': doc.file_type,
+                'description': doc.description,
+                'user_id': doc.user_id,
+                'last_modified': doc.last_modified.isoformat()
+            }
+        }
+        
+        try:
+            index_response = requests.post(
+                'http://127.0.0.1:5000/search/index',
+                json=index_payload,
+                headers={
+                    'Authorization': request.headers.get('Authorization'),
+                    'Content-Type': 'application/json'
+                }
+            )
+            
+            if not index_response.ok:
+                print(f"Warning: Failed to update search index for document {doc.doc_id}")
+        except Exception as index_error:
+            print(f"Error updating search index: {str(index_error)}")
+            # Don't fail the rename if indexing fails
         
         return jsonify({
             'message': 'File renamed successfully',

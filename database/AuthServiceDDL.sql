@@ -16,3 +16,15 @@ CREATE TABLE Users (
     hashed_password VARCHAR(60) NOT NULL
     
 );
+
+-- Table schema for Auth Service
+     Column      |          Type          | Collation | Nullable |                Default                 
+-----------------+------------------------+-----------+----------+----------------------------------------
+ user_id         | integer                |           | not null | nextval('users_user_id_seq'::regclass)
+ first_name      | character varying(255) |           | not null | 
+ last_name       | character varying(255) |           | not null | 
+ email           | character varying(255) |           | not null | 
+ hashed_password | character varying(60)  |           | not null | 
+Indexes:
+    "users_pkey" PRIMARY KEY, btree (user_id)
+    "users_email_key" UNIQUE CONSTRAINT, btree (email)

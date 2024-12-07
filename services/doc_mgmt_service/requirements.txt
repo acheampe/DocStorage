@@ -8,3 +8,4 @@ werkzeug
 pdf2image
 python-docx
 Wand
+pdfplumber

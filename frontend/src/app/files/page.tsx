@@ -74,12 +74,21 @@ export default function Files() {
 
       try {
         const token = localStorage.getItem('token');
+        const userData = localStorage.getItem('user');
+        const user = userData ? JSON.parse(userData) : null;
+
+        if (!user?.user_id) {
+          throw new Error('User ID not found');
+        }
+
+        // Search in all documents
         const response = await fetch(
           `http://127.0.0.1:5000/search?q=${encodeURIComponent(searchQuery)}`,
           {
             headers: {
               'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
+              'Content-Type': 'application/json',
+              'X-User-ID': user.user_id.toString()
             },
             credentials: 'include'
           }
@@ -91,24 +100,34 @@ export default function Files() {
 
         const data = await response.json();
         
-        // Verify each file exists before adding to UI
+        // Verify each file exists and get full metadata
         const verifiedFiles = [];
-        for (const file of data.results) {
-          const verifyResponse = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            },
-            credentials: 'include'
-          });
-          if (verifyResponse.ok) {
-            verifiedFiles.push({
-              doc_id: file.doc_id,
-              original_filename: file.metadata.filename,
-              upload_date: file.metadata.upload_date,
-              file_type: file.metadata.file_type
+        for (const result of data.results) {
+          try {
+            const verifyResponse = await fetch(`http://127.0.0.1:5000/docs/file/${result.doc_id}`, {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              },
+              credentials: 'include'
             });
+            
+            if (verifyResponse.ok) {
+              const fileData = await verifyResponse.json();
+              verifiedFiles.push({
+                doc_id: result.doc_id,
+                original_filename: fileData.filename || result.metadata?.filename,
+                upload_date: fileData.upload_date || result.metadata?.upload_date,
+                file_type: fileData.mime_type || result.metadata?.file_type,
+                is_shared: result.is_shared || false,
+                shared_by: result.shared_by,
+                content: result.content
+              });
+            }
+          } catch (error) {
+            console.error(`Error verifying file ${result.doc_id}:`, error);
           }
         }
+
         setSearchResults(verifiedFiles);
       } catch (error) {
         console.error('Error searching documents:', error);
