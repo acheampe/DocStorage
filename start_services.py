@@ -35,9 +35,9 @@ SERVICE_COLORS = {
     'System': COLORS['HEADER']  # For system messages
 }
 
-def log(message: str, level: str = 'INFO', service: str = None) -> None:
-    """Print formatted log message with timestamp"""
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+def log(message: str, level: str = 'INFO', service: str = None, details: Dict[str, Any] = None) -> None:
+    """Print formatted log message with timestamp and optional details"""
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]  # Include milliseconds
     service_prefix = f"[{service}] " if service else ""
     
     # Get service color or default to white
@@ -47,13 +47,25 @@ def log(message: str, level: str = 'INFO', service: str = None) -> None:
         'INFO': COLORS['BLUE'],
         'ERROR': COLORS['RED'],
         'WARNING': COLORS['YELLOW'],
-        'SUCCESS': COLORS['GREEN']
+        'SUCCESS': COLORS['GREEN'],
+        'DEBUG': COLORS['CYAN']
     }.get(level, COLORS['BLUE'])
     
-    print(f"{COLORS['BOLD']}{timestamp}{COLORS['ENDC']} "
-          f"{level_color}{level:8}{COLORS['ENDC']} "
-          f"{service_color}{service_prefix}{COLORS['ENDC']}"
-          f"{message}")
+    # Format the main message
+    log_message = (
+        f"{COLORS['BOLD']}{timestamp}{COLORS['ENDC']} "
+        f"{level_color}{level:8}{COLORS['ENDC']} "
+        f"{service_color}{service_prefix}{COLORS['ENDC']}"
+        f"{message}"
+    )
+    
+    # Add details if provided
+    if details:
+        log_message += "\n" + "\n".join(
+            f"    {k}: {v}" for k, v in details.items()
+        )
+    
+    print(log_message)
 
 def get_venv_python():
     """Get the correct python executable from virtual environment"""
@@ -140,16 +152,60 @@ class ServiceStatus:
             
             print(f"{COLORS['HEADER']}{'='*80}{COLORS['ENDC']}\n")
 
-def stream_output(process, name, status_tracker):
+def stream_output(process, name, status_tracker, working_dir):
     """Stream the output of a process to the console and update status"""
     try:
+        running = False  # Track if service is already marked as running
         for line in iter(process.stdout.readline, ''):
-            log(redact_sensitive_info(line.strip()), "INFO", name)
-            # Check for successful startup messages
-            if "Running on http://" in line:
-                port = re.search(r":(\d+)", line)
-                if port:
-                    status_tracker.update(name, "RUNNING", process.pid, int(port.group(1)))
+            stripped_line = line.strip()
+            log(redact_sensitive_info(stripped_line), 
+                "INFO", 
+                name,
+                details={
+                    'pid': process.pid,
+                    'command': process.args,
+                    'working_dir': str(working_dir)
+                }
+            )
+            
+            # Don't process startup messages if already running
+            if not running:
+                port = None
+                
+                # Check for Flask "Running on" message
+                if "Running on http://" in stripped_line:
+                    port_match = re.search(r":(\d+)", stripped_line)
+                    if port_match:
+                        port = int(port_match.group(1))
+                        running = True
+                
+                # Check for Next.js startup message
+                elif "Local:        http://localhost:" in stripped_line:
+                    port_match = re.search(r":(\d+)", stripped_line)
+                    if port_match:
+                        port = int(port_match.group(1))
+                        running = True
+                
+                # Check for Flask startup completion
+                elif any([
+                    "* Debug mode: on" in stripped_line,
+                    "* Debug mode: off" in stripped_line
+                ]):
+                    # For Flask apps, check if we have a predefined port
+                    if name == "API Gateway":
+                        port = 5000
+                    elif name == "Auth Service":
+                        port = 3001
+                    elif name == "Doc Management Service":
+                        port = 3002
+                    elif name == "Search Service":
+                        port = 3003
+                    elif name == "Share Service":
+                        port = 3004
+                    running = True
+                
+                if running:
+                    status_tracker.update(name, "RUNNING", process.pid, port)
                     status_tracker.print_status()
         
         for line in iter(process.stderr.readline, ''):
@@ -214,18 +270,20 @@ def start_services():
         status_tracker.print_status()
         
         try:
+            working_dir = service["dir"]  # Store the working directory
             process = subprocess.Popen(
                 service["command"],
-                cwd=service["dir"],
+                cwd=working_dir,
                 env=service["env"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 universal_newlines=True
             )
-            processes.append((service["name"], process))
+            # Store working_dir along with the process
+            processes.append((service["name"], process, working_dir))
             threading.Thread(
                 target=stream_output, 
-                args=(process, service["name"], status_tracker)
+                args=(process, service["name"], status_tracker, working_dir)  # Pass working_dir
             ).start()
             
         except Exception as e:
@@ -235,7 +293,7 @@ def start_services():
             
             # Terminate all running services if any fails to start
             log("Initiating shutdown due to startup failure", "ERROR", "System")
-            for name, proc in processes:
+            for name, proc, _ in processes:  # Update to unpack 3 values
                 try:
                     status_tracker.update(name, "TERMINATING")
                     proc.terminate()
@@ -251,7 +309,7 @@ def start_services():
     # Monitor processes
     try:
         while True:
-            for name, process in processes:
+            for name, process, _ in processes:  # Update to unpack 3 values
                 if process.poll() is not None:
                     status_tracker.update(name, "FAILED")
                     status_tracker.print_status()
@@ -266,7 +324,7 @@ def start_services():
 
         # Terminate all processes
         terminated_services = []
-        for name, process in processes:
+        for name, process, _ in processes:  # Update to unpack 3 values
             try:
                 process.terminate()
                 process.wait(timeout=5)  # Wait up to 5 seconds for graceful shutdown
