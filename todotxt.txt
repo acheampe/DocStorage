@@ -9,8 +9,6 @@ TO DOS
 - Work on optimizing thumbnail images in the files page
 - Implement forgot password feature 
 - Work on optimizing thumbnail images in the dashboard
-- Add intuitive way to return to dashboard page from search results page outside of clearing the search query
-- Add intuitive way to return to files page from search results page outside of clearing the search query
 - Add file descriptions to files page and search functionality
 - Prevent ability to edit file extensions (.docx, .pdf, etc.)
 - Time stamp should be by user local time, not server time
@@ -21,10 +19,10 @@ TO DOS
 - File Tabs - List Order from newest to oldest 
 - Make default recent files into last 8 most recent uploaded files, for aesthetics
 - Add more filter types to search filter (file type, date uploaded, date range)
+- Renamed files can't be found in search results - consider reindexing renamed files route, like with upload/new files
 
-MUST TO DO TOMORROW
-- Finish a Files page feature
-- Files page - shared with me preview/cannot be found 404 --> DONE
-- Files page - Bulk share modal fails/single share works --> DONE
-- Search service
+PRIORITY TODOS:
+- Add intuitive way to return to dashboard page from search results page outside of clearing the search query
+- Add intuitive way to return to files page from search results page outside of clearing the search query
+
 

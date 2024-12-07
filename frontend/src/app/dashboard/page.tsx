@@ -358,9 +358,6 @@ export default function Dashboard() {
           return;
         }
 
-        console.log("\n=== Frontend Search Debug ===");
-        console.log("Search query:", currentQuery);
-
         const response = await fetch(
           `http://127.0.0.1:5000/search?q=${encodeURIComponent(currentQuery)}`,
           {
@@ -376,44 +373,24 @@ export default function Dashboard() {
         }
 
         const data = await response.json();
-        
-        if (data.error) {
-          throw new Error(data.error);
-        }
+        console.log('Raw search results:', data.results);
 
-        console.log("Backend returned results:", data.results.length);
-        console.log("Sample filenames:", data.results.slice(0, 3).map((f: File) => f.original_filename));
-
-        // Split the search query into parts and normalize
-        const queryParts = currentQuery
-          .split(/[\s_]+/)
-          .filter(part => part.length > 0);
-        
-        console.log("Query parts:", queryParts);
-
-        // Filter results to match all parts of the query
-        const filteredResults = data.results.filter((file: File) => {
-          if (!file.original_filename) return false;
+        // Apply the new filter logic
+        const validResults = data.results.filter((searchResult: File) => {
+          const searchTerm = searchQuery.toLowerCase();
+          const filename = searchResult.original_filename?.toLowerCase() || '';
+          const filenameMatches = filename.includes(searchTerm);
           
-          const normalizedFilename = normalizeText(file.original_filename);
-          const normalizedParts = queryParts.map(part => normalizeText(part));
-          
-          console.log("\nChecking file:", normalizedFilename);
-          console.log("Using normalized parts:", normalizedParts);
-          
-          return normalizedParts.every(part => {
-            const hasMatch = normalizedFilename.includes(part);
-            console.log(`- Part "${part}": ${hasMatch ? '✓' : '✗'}`);
-            return hasMatch;
-          });
+          return filenameMatches && (
+            recentFiles.some(file => file.doc_id === searchResult.doc_id) || 
+            sharedWithMeFiles.some(file => file.doc_id === searchResult.doc_id)
+          );
         });
 
-        console.log("\nFiltered results:", filteredResults.length);
-        console.log("Filtered filenames:", filteredResults.map(f => f.original_filename));
+        console.log('Filtered search results:', validResults);
 
         if (searchQuery.trim() === currentQuery) {
-          const uniqueResults = deduplicateSearchResults(filteredResults);
-          console.log("Final unique results:", uniqueResults.length);
+          const uniqueResults = deduplicateSearchResults(validResults);
           setSearchResults(uniqueResults);
         }
 
@@ -428,7 +405,7 @@ export default function Dashboard() {
 
     const timeoutId = setTimeout(searchDocuments, 300);
     return () => clearTimeout(timeoutId);
-  }, [searchQuery]);
+  }, [searchQuery, recentFiles, sharedWithMeFiles]);
 
   const handlePreview = async (docId: number, isSharedWithMe: boolean = false, filename: string, shareId?: number) => {
     try {
