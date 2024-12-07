@@ -31,3 +31,6 @@ iterate_databases.sh
 
 #ignore truncate_tables.sh
 truncate_tables.sh
+
+#ignore scripts
+scripts/

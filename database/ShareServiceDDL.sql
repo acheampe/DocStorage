@@ -56,3 +56,32 @@ CREATE TRIGGER trigger_update_last_accessed
     FOR EACH ROW
     WHEN (OLD.last_accessed IS DISTINCT FROM NEW.last_accessed)
     EXECUTE FUNCTION update_last_accessed();
+
+-- Table schema for Share Service
+
+    Column       |            Type             | Collation | Nullable |                      Default                      
+-------------------+-----------------------------+-----------+----------+---------------------------------------------------
+ share_id          | integer                     |           | not null | nextval('shareddocuments_share_id_seq'::regclass)
+ doc_id            | integer                     |           | not null | 
+ owner_id          | integer                     |           | not null | 
+ recipient_id      | integer                     |           | not null | 
+ display_name      | character varying(255)      |           | not null | 
+ original_filename | character varying(255)      |           | not null | 
+ shared_date       | timestamp without time zone |           | not null | CURRENT_TIMESTAMP
+ last_accessed     | timestamp without time zone |           |          | 
+ expiry_date       | timestamp without time zone |           |          | 
+ status            | character varying(20)       |           | not null | 'active'::character varying
+ file_path         | character varying(255)      |           | not null | 
+Indexes:
+    "shareddocuments_pkey" PRIMARY KEY, btree (share_id)
+    "idx_owner_id" btree (owner_id)
+    "idx_recipient_id" btree (recipient_id)
+    "idx_shared_docs_doc" btree (doc_id)
+    "idx_shared_docs_owner" btree (owner_id)
+    "idx_shared_docs_recipient" btree (recipient_id)
+    "idx_shared_docs_status" btree (status)
+    "idx_unique_share" UNIQUE, btree (doc_id, owner_id, recipient_id) WHERE status::text = 'active'::
+text
+Triggers:
+    trigger_update_last_accessed BEFORE UPDATE ON shareddocuments FOR EACH ROW WHEN (old.last_accesse
+d IS DISTINCT FROM new.last_accessed) EXECUTE FUNCTION update_last_accessed()

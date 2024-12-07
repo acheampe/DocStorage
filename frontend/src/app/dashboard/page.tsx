@@ -16,8 +16,12 @@ interface User {
 interface File {
   doc_id: number;
   original_filename: string;
-  upload_date: string;
+  upload_date?: string;
   file_type: string;
+  is_shared?: boolean;
+  shared_by?: number;
+  content?: string;
+  share_id?: number;
 }
 
 interface PreviewData {
@@ -67,6 +71,27 @@ function getFileIcon(filename: string | undefined): string {
       return 'description';
   }
 }
+
+// Add this function near the top of your component
+const deduplicateSearchResults = (results: File[]) => {
+  const seen = new Set<string>();
+  return results.filter(file => {
+    // Use original_filename as the unique key since that's what we're searching by
+    const filename = file.original_filename?.toLowerCase();
+    if (!filename || seen.has(filename)) return false;
+    seen.add(filename);
+    return true;
+  });
+};
+
+// Normalize text by removing special characters and extra spaces
+const normalizeText = (text: string): string => {
+  return text
+    .toLowerCase()
+    .replace(/[_-]/g, ' ')    // Replace underscores and hyphens with spaces
+    .replace(/\s+/g, ' ')     // Replace multiple spaces with single space
+    .trim();                  // Remove leading/trailing spaces
+};
 
 export default function Dashboard() {
   const router = useRouter();
@@ -311,54 +336,91 @@ export default function Dashboard() {
     };
   }, [recentFiles, sharedWithMeFiles]);
 
-  // Add debounced search
+  // Modify the search useEffect
   useEffect(() => {
     const searchDocuments = async () => {
-      if (!searchQuery.trim()) {
-        setSearchResults([]);
-        setIsSearching(false);
-        return;
-      }
-
-      setIsSearching(true);
-      setSearchError(null);
-
+      const currentQuery = searchQuery.trim().toLowerCase();
+      
       try {
-        const token = localStorage.getItem('token');
-        const userData = localStorage.getItem('user');
-        const user = userData ? JSON.parse(userData) : null;
-
-        if (!user?.user_id) {
-          throw new Error('User ID not found');
+        if (!currentQuery) {
+          setSearchResults([]);
+          setIsSearching(false);
+          return;
         }
 
+        setIsSearching(true);
+        setSearchError(null);
+
+        const token = localStorage.getItem('token');
+        if (!token) {
+          console.error('No token found');
+          setIsSearching(false);
+          return;
+        }
+
+        console.log("\n=== Frontend Search Debug ===");
+        console.log("Search query:", currentQuery);
+
         const response = await fetch(
-          `http://127.0.0.1:5000/docs/search?q=${encodeURIComponent(searchQuery)}`,
+          `http://127.0.0.1:5000/search?q=${encodeURIComponent(currentQuery)}`,
           {
             headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
+              'Authorization': `Bearer ${token}`
             },
             credentials: 'include'
           }
         );
 
         if (!response.ok) {
-          throw new Error('Search failed');
+          throw new Error(`Search failed: ${response.status}`);
         }
 
         const data = await response.json();
-        setSearchResults(data.results.map((result: any) => ({
-          doc_id: result.doc_id,
-          original_filename: result.metadata.filename,
-          upload_date: result.metadata.upload_date,
-          file_type: result.metadata.file_type,
-          shared_by: result.metadata.owner_id,
-          shared_with: result.metadata.recipient_id
-        })));
+        
+        if (data.error) {
+          throw new Error(data.error);
+        }
+
+        console.log("Backend returned results:", data.results.length);
+        console.log("Sample filenames:", data.results.slice(0, 3).map((f: File) => f.original_filename));
+
+        // Split the search query into parts and normalize
+        const queryParts = currentQuery
+          .split(/[\s_]+/)
+          .filter(part => part.length > 0);
+        
+        console.log("Query parts:", queryParts);
+
+        // Filter results to match all parts of the query
+        const filteredResults = data.results.filter((file: File) => {
+          if (!file.original_filename) return false;
+          
+          const normalizedFilename = normalizeText(file.original_filename);
+          const normalizedParts = queryParts.map(part => normalizeText(part));
+          
+          console.log("\nChecking file:", normalizedFilename);
+          console.log("Using normalized parts:", normalizedParts);
+          
+          return normalizedParts.every(part => {
+            const hasMatch = normalizedFilename.includes(part);
+            console.log(`- Part "${part}": ${hasMatch ? '✓' : '✗'}`);
+            return hasMatch;
+          });
+        });
+
+        console.log("\nFiltered results:", filteredResults.length);
+        console.log("Filtered filenames:", filteredResults.map(f => f.original_filename));
+
+        if (searchQuery.trim() === currentQuery) {
+          const uniqueResults = deduplicateSearchResults(filteredResults);
+          console.log("Final unique results:", uniqueResults.length);
+          setSearchResults(uniqueResults);
+        }
+
       } catch (error) {
-        console.error('Error searching documents:', error);
-        setSearchError('Failed to search documents');
+        console.error('Search error:', error);
+        setSearchError(error instanceof Error ? error.message : 'Search failed');
+        setSearchResults([]);
       } finally {
         setIsSearching(false);
       }
@@ -379,9 +441,9 @@ export default function Dashboard() {
       }
 
       // Use share endpoints for shared files
-      const endpoint = isSharedWithMe
-        ? `http://127.0.0.1:5000/share/preview/${shareId}/content`
-        : `http://127.0.0.1:5000/docs/file/${docId}`;
+      const endpoint = isSharedWithMe && shareId
+        ? `http://127.0.0.1:5000/share/content/${shareId}`  // New share service endpoint
+        : `http://127.0.0.1:5000/docs/file/${docId}`;      // Existing doc service endpoint
 
       console.log(`Using endpoint: ${endpoint}`);
       
@@ -579,41 +641,58 @@ export default function Dashboard() {
         </div>
 
         {/* Tabs and View All Files button container */}
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex gap-8">
-            <button
-              onClick={() => setActiveTab('recent')}
-              className={`text-lg font-semibold ${
-                activeTab === 'recent' ? 'text-navy border-b-2 border-navy' : 'text-gray-500'
-              }`}
+        {!searchQuery ? (
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex gap-8">
+              <button
+                onClick={() => setActiveTab('recent')}
+                className={`text-lg font-semibold ${
+                  activeTab === 'recent' ? 'text-navy border-b-2 border-navy' : 'text-gray-500'
+                }`}
+              >
+                Recent Files
+              </button>
+              <button
+                onClick={() => setActiveTab('shared-with-me')}
+                className={`text-lg font-semibold ${
+                  activeTab === 'shared-with-me' ? 'text-navy border-b-2 border-navy' : 'text-gray-500'
+                }`}
+              >
+                Shared with Me
+              </button>
+              <button
+                onClick={() => setActiveTab('shared-by-me')}
+                className={`text-lg font-semibold ${
+                  activeTab === 'shared-by-me' ? 'text-navy border-b-2 border-navy' : 'text-gray-500'
+                }`}
+              >
+                Shared by Me
+              </button>
+            </div>
+            
+            <Link
+              href="/files"
+              className="bg-[#002B5B] hover:bg-[#1B4B7D] text-white font-medium py-2 px-4 rounded transition-colors"
             >
-              Recent Files
-            </button>
-            <button
-              onClick={() => setActiveTab('shared-with-me')}
-              className={`text-lg font-semibold ${
-                activeTab === 'shared-with-me' ? 'text-navy border-b-2 border-navy' : 'text-gray-500'
-              }`}
-            >
-              Shared with Me
-            </button>
-            <button
-              onClick={() => setActiveTab('shared-by-me')}
-              className={`text-lg font-semibold ${
-                activeTab === 'shared-by-me' ? 'text-navy border-b-2 border-navy' : 'text-gray-500'
-              }`}
-            >
-              Shared by Me
-            </button>
+              View All Files
+            </Link>
           </div>
-          
-          <Link
-            href="/files"
-            className="bg-[#002B5B] hover:bg-[#1B4B7D] text-white font-medium py-2 px-4 rounded transition-colors"
-          >
-            View All Files
-          </Link>
-        </div>
+        ) : (
+          <div className="mb-6">
+            <h2 className="text-xl font-semibold text-navy">
+              {isSearching ? (
+                <span className="flex items-center gap-2">
+                  <span className="material-symbols-rounded animate-spin">hourglass_empty</span>
+                  Searching...
+                </span>
+              ) : searchResults.length > 0 ? (
+                `Search Results (${searchResults.length})`
+              ) : (
+                'Search Results'
+              )}
+            </h2>
+          </div>
+        )}
 
         {searchError && (
           <div className="mb-6 p-4 bg-red-100 text-red-700 rounded-lg">
@@ -621,40 +700,58 @@ export default function Dashboard() {
           </div>
         )}
 
+        {searchQuery && searchResults.length === 0 && !isSearching && !searchError ? (
+          <div className="text-center mt-4 text-gray-600">
+            No results found for "{searchQuery}"
+          </div>
+        ) : null}
+
         {/* Files Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {activeTab === 'recent' && (searchQuery ? searchResults : recentFiles).map((file) => (
-            // Recent files grid items
-            <FileCard
-              key={file.doc_id}
-              file={file}
-              imageUrl={imageUrls[file.doc_id]}
-              onPreview={() => handlePreview(file.doc_id, false, file.original_filename)}
-              onShare={() => setShareModalOpen(file.doc_id)}
-            />
-          ))}
+          {searchQuery ? 
+            searchResults.map((file, index) => (
+              <FileCard
+                key={`search-${file.doc_id}-${file.share_id || 'private'}-${index}`}
+                file={file}
+                imageUrl={imageUrls[file.doc_id]}
+                onPreview={() => handlePreview(file.doc_id, file.is_shared, file.original_filename, file.share_id)}
+                onShare={!file.is_shared ? () => setShareModalOpen(file.doc_id) : undefined}
+                isShared={file.is_shared}
+              />
+            ))
+            : (
+              <>
+                {activeTab === 'recent' && recentFiles.map((file, index) => (
+                  <FileCard
+                    key={`recent-${file.doc_id}-${index}`}
+                    file={file}
+                    imageUrl={imageUrls[file.doc_id]}
+                    onPreview={() => handlePreview(file.doc_id, file.is_shared, file.original_filename)}
+                    onShare={() => setShareModalOpen(file.doc_id)}
+                  />
+                ))}
 
-          {activeTab === 'shared-with-me' && sharedWithMeFiles.map((file) => (
-            // Shared with me files grid items
-            <FileCard
-              key={file.share_id}
-              file={file}
-              imageUrl={imageUrls[file.doc_id]}
-              onPreview={() => handlePreview(file.doc_id, true, file.original_filename, file.share_id)}
-              isShared={true}
-            />
-          ))}
+                {activeTab === 'shared-with-me' && sharedWithMeFiles.map((file, index) => (
+                  <FileCard
+                    key={`shared-with-${file.doc_id}-${file.share_id}-${index}`}
+                    file={file}
+                    imageUrl={imageUrls[file.doc_id]}
+                    onPreview={() => handlePreview(file.doc_id, true, file.original_filename, file.share_id)}
+                    isShared={true}
+                  />
+                ))}
 
-          {activeTab === 'shared-by-me' && sharedByMeFiles.map((file) => (
-            // Shared by me files grid items
-            <FileCard
-              key={file.share_id}
-              file={file}
-              imageUrl={imageUrls[file.doc_id]}
-              onPreview={() => handlePreview(file.doc_id, true, file.original_filename, file.share_id)}
-              isShared={true}
-            />
-          ))}
+                {activeTab === 'shared-by-me' && sharedByMeFiles.map((file, index) => (
+                  <FileCard
+                    key={`shared-by-${file.doc_id}-${file.share_id}-${index}`}
+                    file={file}
+                    imageUrl={imageUrls[file.doc_id]}
+                    onPreview={() => handlePreview(file.doc_id, true, file.original_filename, file.share_id)}
+                    isShared={true}
+                  />
+                ))}
+              </>
+            )}
         </div>
 
         {/* Preview Modal */}
@@ -674,6 +771,8 @@ export default function Dashboard() {
             onSuccess={handleShareSuccess}
           />
         )}
+
+        {isSearching && <div>Searching...</div>}
       </main>
     </div>
   );
@@ -793,6 +892,20 @@ function PreviewModal({ previewData, onClose, onShare }: PreviewModalProps) {
                 <span className="material-symbols-rounded">share</span>
               </button>
             )}
+            <button 
+              onClick={() => {
+                const a = document.createElement('a');
+                a.href = previewData.url;
+                a.download = previewData.filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+              }}
+              className="text-navy hover:text-gold transition-colors"
+              title="Download this document"
+            >
+              <span className="material-symbols-rounded">download</span>
+            </button>
             <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
               <span className="material-symbols-rounded">close</span>
             </button>

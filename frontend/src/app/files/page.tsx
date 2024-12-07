@@ -29,6 +29,7 @@ interface PreviewData {
   url: string;
   filename: string;
   docId: number;
+  isSharedWithMe: boolean;
 }
 
 export default function Files() {
@@ -73,12 +74,21 @@ export default function Files() {
 
       try {
         const token = localStorage.getItem('token');
+        const userData = localStorage.getItem('user');
+        const user = userData ? JSON.parse(userData) : null;
+
+        if (!user?.user_id) {
+          throw new Error('User ID not found');
+        }
+
+        // Search in all documents
         const response = await fetch(
           `http://127.0.0.1:5000/search?q=${encodeURIComponent(searchQuery)}`,
           {
             headers: {
               'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
+              'Content-Type': 'application/json',
+              'X-User-ID': user.user_id.toString()
             },
             credentials: 'include'
           }
@@ -90,24 +100,34 @@ export default function Files() {
 
         const data = await response.json();
         
-        // Verify each file exists before adding to UI
+        // Verify each file exists and get full metadata
         const verifiedFiles = [];
-        for (const file of data.results) {
-          const verifyResponse = await fetch(`http://127.0.0.1:5000/docs/file/${file.doc_id}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            },
-            credentials: 'include'
-          });
-          if (verifyResponse.ok) {
-            verifiedFiles.push({
-              doc_id: file.doc_id,
-              original_filename: file.metadata.filename,
-              upload_date: file.metadata.upload_date,
-              file_type: file.metadata.file_type
+        for (const result of data.results) {
+          try {
+            const verifyResponse = await fetch(`http://127.0.0.1:5000/docs/file/${result.doc_id}`, {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              },
+              credentials: 'include'
             });
+            
+            if (verifyResponse.ok) {
+              const fileData = await verifyResponse.json();
+              verifiedFiles.push({
+                doc_id: result.doc_id,
+                original_filename: fileData.filename || result.metadata?.filename,
+                upload_date: fileData.upload_date || result.metadata?.upload_date,
+                file_type: fileData.mime_type || result.metadata?.file_type,
+                is_shared: result.is_shared || false,
+                shared_by: result.shared_by,
+                content: result.content
+              });
+            }
+          } catch (error) {
+            console.error(`Error verifying file ${result.doc_id}:`, error);
           }
         }
+
         setSearchResults(verifiedFiles);
       } catch (error) {
         console.error('Error searching documents:', error);
@@ -279,43 +299,60 @@ export default function Files() {
 
   const handleRename = async () => {
     if (!editingFile) return;
-    
+
     try {
       const token = localStorage.getItem('token');
-      console.log('Attempting to rename file:', editingFile);
+      const newFilename = editingFile.name;
+      
+      // Get the timestamp and user directory from the existing file path
+      const timestamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0].replace('T', '_');
+      const userDir = `${localStorage.getItem('userId')}/`;
+      
+      // Construct the new filename with timestamp
+      const newTimestampedFilename = `${timestamp}_${newFilename}`;
+      // Construct the new file path
+      const newFilePath = `${userDir}${newTimestampedFilename}`;
 
-      const response = await fetch(`http://127.0.0.1:5000/docs/documents/${editingFile.id}`, {
-        method: 'PATCH',
+      const response = await fetch(`http://127.0.0.1:5000/docs/file/${editingFile.id}/rename`, {
+        method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ filename: editingFile.name })
+        body: JSON.stringify({
+          new_filename: newFilename,
+          new_timestamped_filename: newTimestampedFilename,
+          new_file_path: newFilePath
+        })
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Server error:', errorData);
         throw new Error('Failed to rename file');
       }
-      
-      const data = await response.json();
-      console.log('Success response:', data);
-      
-      // Refresh the file list after successful rename
-      await fetchAllFiles();
-      
+
+      // Update local state
+      setFiles(prevFiles => 
+        prevFiles.map(file => 
+          file.doc_id === editingFile.id 
+            ? { 
+                ...file, 
+                original_filename: newFilename,
+                filename: newTimestampedFilename,
+                file_path: newFilePath 
+              } 
+            : file
+        )
+      );
+
       setEditingFile(null);
       setSuccessMessage('File renamed successfully');
-      setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error) {
       console.error('Error renaming file:', error);
-      setSuccessMessage('Failed to rename file. Please try again.');
-      setTimeout(() => setSuccessMessage(null), 3000);
+      setError('Failed to rename file');
     }
   };
 
-  const handlePreview = async (docId: number, isSharedWithMe: boolean = false, filename: string, shareId?: number) => {
+  const handlePreview = async (docId: number, isSharedWithMe: boolean, filename: string, shareId?: number) => {
     try {
       console.log(`Previewing file: docId=${docId}, shareId=${shareId}, isSharedWithMe=${isSharedWithMe}`);
       
@@ -356,7 +393,7 @@ export default function Files() {
         if (!userConfirmed) return;
 
         const downloadEndpoint = isSharedWithMe
-          ? `http://127.0.0.1:5000/share/preview/${shareId}`
+          ? `http://127.0.0.1:5000/share/preview/${shareId}/content`
           : `http://127.0.0.1:5000/docs/file/${docId}`;
 
         const downloadResponse = await fetch(downloadEndpoint, {
@@ -404,14 +441,16 @@ export default function Files() {
           type: 'image',
           url: URL.createObjectURL(data),
           filename: filename,
-          docId: docId
+          docId: docId,
+          isSharedWithMe: isSharedWithMe
         });
       } else if (contentType === 'application/pdf') {
         setPreviewData({
           type: 'pdf',
           url: URL.createObjectURL(data),
           filename: filename,
-          docId: docId
+          docId: docId,
+          isSharedWithMe: isSharedWithMe
         });
       } else if (contentType.startsWith('text/')) {
         const text = await data.text();
@@ -419,7 +458,8 @@ export default function Files() {
           type: 'text',
           url: text,
           filename: filename,
-          docId: docId
+          docId: docId,
+          isSharedWithMe: isSharedWithMe
         });
       } else {
         const userConfirmed = window.confirm(
@@ -566,9 +606,13 @@ export default function Files() {
                   Download Selected
                 </button>
                 <button
-                  onClick={() => setShareModalOpen(-2)}
-                  className="px-6 py-2 bg-gold text-white rounded-lg hover:bg-opacity-90 transition-all"
-                  title="Share selected files"
+                  onClick={() => {
+                    if (selectedFiles.length > 0) {
+                      setShareModalOpen(-2); // Special value for bulk share
+                    }
+                  }}
+                  disabled={selectedFiles.length === 0}
+                  className="px-4 py-2 bg-gold text-white rounded-lg hover:bg-opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Share Selected
                 </button>
@@ -638,6 +682,19 @@ export default function Files() {
                       >
                         <span className="material-symbols-rounded">share</span>
                       </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingFile({ 
+                            id: file.doc_id, 
+                            name: file.original_filename 
+                          });
+                        }}
+                        className="text-navy hover:text-gold"
+                        title="Rename file"
+                      >
+                        <span className="material-symbols-rounded">edit</span>
+                      </button>
                     </div>
                   </div>
 
@@ -691,7 +748,7 @@ export default function Files() {
                   onClick={() => handlePreview(
                     share.doc_id,
                     true,  // isSharedWithMe = true
-                    share.original_filename || share.display_name || share.filename,
+                    share.original_filename || share.display_name || share.filename || 'Unknown Filename',
                     share.share_id  // Pass the share_id
                   )}
                 >
@@ -764,15 +821,42 @@ export default function Files() {
               <div className="flex items-center gap-2 flex-1 mr-4">
                 <h3 className="text-xl font-bold truncate">{previewData.filename}</h3>
                 <div className="flex gap-2">
+                  {!previewData.isSharedWithMe && (
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingFile({ id: previewData.docId, name: previewData.filename });
+                      }}
+                      className="text-gray-500 hover:text-navy transition-colors"
+                      title="Rename this document"
+                    >
+                      <span className="material-symbols-rounded">edit</span>
+                    </button>
+                  )}
                   <button 
                     onClick={(e) => {
                       e.stopPropagation();
-                      setShareModalOpen(previewData.docId);  // Use docId directly from previewData
+                      setShareModalOpen(previewData.docId);
                     }}
                     className="text-gray-500 hover:text-navy transition-colors"
                     title="Share this document"
                   >
                     <span className="material-symbols-rounded">share</span>
+                  </button>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const a = document.createElement('a');
+                      a.href = previewData.url;
+                      a.download = previewData.filename;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                    }}
+                    className="text-gray-500 hover:text-navy transition-colors"
+                    title="Download this document"
+                  >
+                    <span className="material-symbols-rounded">download</span>
                   </button>
                 </div>
               </div>
@@ -846,8 +930,11 @@ export default function Files() {
 
       {shareModalOpen !== -1 && (
         <ShareModal
-          onClose={() => setShareModalOpen(-1)}
-          selectedFiles={[shareModalOpen]}
+          onClose={() => {
+            setShareModalOpen(-1);
+            setSelectedFiles([]); // Clear selections after sharing
+          }}
+          selectedFiles={shareModalOpen === -2 ? selectedFiles : [shareModalOpen]}
           onSuccess={handleShareSuccess}
         />
       )}

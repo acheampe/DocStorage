@@ -8,6 +8,7 @@ import jwt
 import base64
 import json
 from datetime import datetime
+import mimetypes
 
 load_dotenv()
 
@@ -16,7 +17,7 @@ CORS(app, resources={
     r"/*": {
         "origins": ["http://localhost:3000"],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"],
+        "allow_headers": ["Content-Type", "Authorization", "X-User-Id", "Accept"],
         "supports_credentials": True,
         "expose_headers": ["Content-Type", "Authorization"]
     }
@@ -30,37 +31,60 @@ SERVICES = {
 }
 
 def get_forwarded_headers(request):
+    """Forward relevant headers from the original request"""
     headers = {
         key: value for (key, value) in request.headers if key != 'Host'
     }
+    
+    print("Original headers:", headers)  # Debug print
     
     # Get the authorization header
     auth_header = headers.get('Authorization')
     if auth_header and auth_header.startswith('Bearer '):
         token = auth_header.split(' ')[1]
+        print("Original token:", token)  # Debug print
         
         try:
-            # Decode the token
-            decoded = jwt.decode(token, os.getenv('JWT_SECRET_KEY'), algorithms=['HS256'])
+            # Decode the token using SECRET_KEY from .env
+            secret_key = os.getenv('SECRET_KEY')
+            print("Using secret key:", secret_key)  # Debug print
+            
+            decoded = jwt.decode(token, secret_key, algorithms=['HS256'])
+            print("Decoded token:", decoded)  # Debug print
             
             # Add sub claim if missing
             if 'user_id' in decoded and 'sub' not in decoded:
                 decoded['sub'] = str(decoded['user_id'])  # Convert to string for sub claim
+                print("Added sub claim:", decoded)  # Debug print
                 
-                # Create new token with sub claim
+                # Create new token with sub claim using the same SECRET_KEY
                 new_token = jwt.encode(
                     decoded,
-                    os.getenv('JWT_SECRET_KEY'),
+                    secret_key,
                     algorithm='HS256'
                 )
                 
                 # Update the Authorization header with the new token
                 headers['Authorization'] = f'Bearer {new_token}'
-                print(f"Gateway: Modified token payload: {decoded}")
+                print("New token created:", new_token)  # Debug print
         except Exception as e:
             print(f"Gateway: Error processing token: {str(e)}")
+            print(f"Error type: {type(e)}")  # Debug print
+            traceback.print_exc()  # Print full traceback
     
+    print("Final headers:", headers)  # Debug print
     return headers
+
+def get_search_headers(request):
+    """Specific header handling for search service"""
+    headers = {
+        'Authorization': request.headers.get('Authorization'),
+        'X-User-Id': request.headers.get('X-User-Id'),
+        'Accept': request.headers.get('Accept', 'application/json'),
+        'Content-Type': request.headers.get('Content-Type', 'application/json')
+    }
+    # Remove None values
+    return {k: v for k, v in headers.items() if v is not None}
 
 @app.route('/auth/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
 def auth_service(path):
@@ -125,13 +149,13 @@ def docs_service(path):
         print(f"Gateway error: {str(e)}")
         return jsonify({'error': 'Document service unavailable'}), 503
 
-@app.route('/docs/file/<path:path>', methods=['GET', 'OPTIONS'])
+@app.route('/docs/file/<path:path>', methods=['GET', 'PUT', 'OPTIONS'])
 def get_document(path):
     if request.method == 'OPTIONS':
         response = make_response()
         response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
         response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,OPTIONS')
         response.headers.add('Access-Control-Allow-Credentials', 'true')
         return response
 
@@ -144,22 +168,31 @@ def get_document(path):
         service_url = SERVICES['docs']
         target_url = f"{service_url}/docs/file/{path}"
         
-        response = requests.get(
-            target_url,
-            headers=get_forwarded_headers(request),
-            cookies=request.cookies,
-            stream=True
-        )
+        # Handle both GET and PUT requests
+        if request.method == 'GET':
+            response = requests.get(
+                target_url,
+                headers=get_forwarded_headers(request),
+                cookies=request.cookies,
+                stream=True
+            )
+        elif request.method == 'PUT':
+            response = requests.put(
+                target_url,
+                headers=get_forwarded_headers(request),
+                data=request.get_data(),
+                cookies=request.cookies
+            )
         
         return Response(
-            response.iter_content(chunk_size=8192),
+            response.iter_content(chunk_size=8192) if request.method == 'GET' else response.content,
             status=response.status_code,
             headers={
                 'Content-Type': response.headers.get('Content-Type', 'application/octet-stream'),
                 'Access-Control-Allow-Origin': 'http://localhost:3000',
                 'Access-Control-Allow-Credentials': 'true'
             },
-            direct_passthrough=True
+            direct_passthrough=request.method == 'GET'
         )
         
     except requests.exceptions.RequestException as e:
@@ -239,54 +272,73 @@ def search_service():
     if request.method == 'OPTIONS':
         response = make_response()
         response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-User-Id, Accept')
+        response.headers.add('Access-Control-Allow-Methods', 'GET, OPTIONS')
         response.headers.add('Access-Control-Allow-Credentials', 'true')
         return response
 
     try:
+        # Get user ID from token
+        user_id = get_user_id_from_token(request.headers.get('Authorization'))
+        if not user_id:
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        # First, get search results from search service
         service_url = SERVICES['search']
-        query_string = request.query_string.decode()
-        target_url = f"{service_url}/search?{query_string}"
+        target_url = f"{service_url}/search"
         
-        print(f"Gateway: Search request received with query: {query_string}")
-        print(f"Gateway: Forwarding GET request to: {target_url}")
-        print(f"Gateway: Headers being forwarded: {get_forwarded_headers(request)}")
+        print("=== Search Request Debug ===")
+        print(f"Query params: {dict(request.args)}")
         
-        response = requests.get(
+        # Create headers with user ID
+        headers = get_search_headers(request)
+        
+        # Get search results
+        search_response = requests.get(
             target_url,
-            headers=get_forwarded_headers(request),
-            timeout=10  # Increased timeout
+            headers=headers,
+            params=request.args
         )
         
-        print(f"Gateway: Search response status: {response.status_code}")
-        print(f"Gateway: Search response content: {response.content.decode()[:200]}")
-        
-        if response.status_code != 200:
-            error_message = f"Search failed with status {response.status_code}: {response.text}"
-            print(f"Gateway: {error_message}")
-            return jsonify({'error': error_message}), response.status_code
-        
-        # Parse response to ensure it's valid JSON
-        try:
-            response_data = response.json()
+        if search_response.status_code != 200:
             return Response(
-                response.content,
-                status=200,
+                search_response.content,
+                status=search_response.status_code,
                 headers={
                     'Content-Type': 'application/json',
-                    'Access-Control-Allow-Credentials': 'true',
-                    'Access-Control-Allow-Origin': 'http://localhost:3000'
+                    'Access-Control-Allow-Origin': 'http://localhost:3000',
+                    'Access-Control-Allow-Credentials': 'true'
                 }
             )
-        except ValueError as e:
-            print(f"Gateway: Invalid JSON in search response: {str(e)}")
-            return jsonify({'error': 'Invalid search response format'}), 500
+
+        # Now get shared files metadata
+        share_url = f"{SERVICES['share']}/share/file/metadata"
+        share_response = requests.get(
+            share_url,
+            headers=headers,
+            params={'user_id': user_id}
+        )
+
+        # Combine results
+        search_results = search_response.json()
+        if share_response.status_code == 200:
+            shared_files = share_response.json().get('files', [])
+            # Add shared files to search results
+            search_results['results'].extend([
+                {
+                    **shared_file,
+                    'source': 'shared'
+                } for shared_file in shared_files
+            ])
+        
+        return jsonify({
+            'results': search_results['results'],
+            'total': len(search_results['results'])
+        })
         
     except requests.exceptions.RequestException as e:
-        error_message = f"Search service error: {str(e)}"
-        print(f"Gateway: {error_message}")
-        return jsonify({'error': error_message}), 503
+        print(f"Gateway error: {str(e)}")
+        return jsonify({'error': 'Search service unavailable'}), 503
 
 @app.route('/search/index', methods=['POST', 'OPTIONS'])
 def index_document():
@@ -300,7 +352,7 @@ def index_document():
 
     try:
         service_url = SERVICES['search']
-        target_url = f"{service_url}/search/index"
+        target_url = f"{service_url}/index"
         
         print(f"Gateway: Forwarding POST request to: {target_url}")
         
@@ -554,18 +606,17 @@ def get_shared_with_me():
         # Forward to share service
         share_service_url = SERVICES['share']
         auth_service_url = SERVICES['auth']
-        docs_service_url = SERVICES['docs']
         
         share_response = requests.get(
             f"{share_service_url}/share/shared-with-me",
             params={'recipient_id': user_id},
             headers=get_forwarded_headers(request)
         )
-        
+       
         if share_response.status_code == 200:
             share_data = share_response.json()
             
-            # Enrich with owner info and document metadata
+            # Enrich with owner info only
             for share in share_data.get('shares', []):
                 try:
                     # Get owner info
@@ -583,20 +634,12 @@ def get_shared_with_me():
                         shared_date = datetime.fromisoformat(share['shared_date'].replace('Z', '+00:00'))
                         share['shared_date'] = shared_date.strftime('%Y-%m-%d %H:%M:%S')
                     
-                    # Get document metadata
-                    doc_response = requests.get(
-                        f"{docs_service_url}/docs/file/{share['doc_id']}",
-                        headers=get_forwarded_headers(request)
-                    )
-                    
-                    if doc_response.status_code == 200:
-                        doc_data = doc_response.json()
-                        share.update({
-                            'filename': doc_data.get('filename'),
-                            'mime_type': doc_data.get('mime_type'),
-                            'file_size': doc_data.get('file_size'),
-                            'thumbnail_url': f"/docs/file/{share['doc_id']}/thumbnail"
-                        })
+                    # Use display_name and file_path from share record
+                    share.update({
+                        'filename': share.get('display_name'),
+                        'original_filename': share.get('original_filename'),
+                        'file_type': mimetypes.guess_type(share.get('original_filename', ''))[0]
+                    })
                         
                 except Exception as e:
                     print(f"Error enriching share data: {str(e)}")
@@ -627,9 +670,9 @@ def get_jwt_data(auth_header):
     token = auth_header.split(' ')[1]
     try:
         # Get JWT secret from environment
-        jwt_secret = os.getenv('JWT_SECRET_KEY')
+        jwt_secret = os.getenv('SECRET_KEY')
         if not jwt_secret:
-            print("Warning: JWT_SECRET_KEY not found in environment")
+            print("Warning: SECRET_KEY not found in environment")
             return None
             
         return jwt.decode(token, jwt_secret, algorithms=['HS256'])
@@ -651,7 +694,6 @@ def get_shared_by_me():
         return response
 
     try:
-        # Get user ID from token using the new function
         user_id = get_user_id_from_token(request.headers.get('Authorization'))
         if not user_id:
             return jsonify({'error': 'Unauthorized'}), 401
@@ -670,11 +712,10 @@ def get_shared_by_me():
             # Get auth service for user lookups
             auth_service_url = SERVICES['auth']
             
-            # Enrich with document metadata and recipient info
-            docs_service_url = SERVICES['docs']
+            # Enrich with recipient info only
             for share in share_data.get('shares', []):
                 try:
-                    # Get recipient info using auth service's user lookup endpoint
+                    # Get recipient info
                     recipient_response = requests.post(
                         f"{auth_service_url}/auth/user/by-id",
                         headers=get_forwarded_headers(request),
@@ -684,29 +725,18 @@ def get_shared_by_me():
                     if recipient_response.status_code == 200:
                         recipient_data = recipient_response.json()
                         share['shared_with'] = recipient_data.get('email')
-                    else:
-                        print(f"Error fetching recipient data: {recipient_response.status_code}")
-                        share['shared_with'] = 'Unknown'
                     
                     # Format the date
                     if share.get('shared_date'):
                         shared_date = datetime.fromisoformat(share['shared_date'].replace('Z', '+00:00'))
                         share['shared_date'] = shared_date.strftime('%Y-%m-%d')
                     
-                    # Get document metadata
-                    doc_response = requests.get(
-                        f"{docs_service_url}/docs/file/{share['doc_id']}",
-                        headers=get_forwarded_headers(request)
-                    )
-                    
-                    if doc_response.status_code == 200:
-                        doc_data = doc_response.json()
-                        share.update({
-                            'filename': doc_data.get('filename'),
-                            'mime_type': doc_data.get('mime_type'),
-                            'file_size': doc_data.get('file_size'),
-                            'thumbnail_url': f"/docs/file/{share['doc_id']}/thumbnail"
-                        })
+                    # Use metadata from share record
+                    share.update({
+                        'filename': share.get('display_name'),
+                        'original_filename': share.get('original_filename'),
+                        'file_type': mimetypes.guess_type(share.get('original_filename', ''))[0]
+                    })
                         
                 except Exception as e:
                     print(f"Error enriching share data: {str(e)}")
@@ -823,9 +853,9 @@ def get_user_id_from_token(auth_header):
     token = auth_header.split(' ')[1]
     try:
         # Get JWT secret from environment
-        jwt_secret = os.getenv('JWT_SECRET_KEY')
+        jwt_secret = os.getenv('SECRET_KEY')
         if not jwt_secret:
-            print("Warning: JWT_SECRET_KEY not found in environment")
+            print("Warning: SECRET_KEY not found in environment")
             return None
             
         decoded = jwt.decode(token, jwt_secret, algorithms=['HS256'])
@@ -1010,8 +1040,160 @@ def get_shared_file_thumbnail(doc_id):
         return jsonify({'error': 'Service unavailable'}), 503
 
 # Add new routes for share preview and content
-@app.route('/share/preview/<int:share_id>/content', methods=['GET', 'OPTIONS'])
-def get_shared_content(share_id):
+@app.route('/share/preview/<path:doc_id>/content', methods=['GET', 'OPTIONS'])
+def get_shared_content(doc_id):
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        # Handle undefined or invalid doc_id
+        if doc_id == 'undefined' or not doc_id:
+            return jsonify({'error': 'Invalid document ID'}), 400
+
+        service_url = SERVICES['share']
+        target_url = f"{service_url}/share/preview/{doc_id}/content"
+        
+        print(f"Gateway: Forwarding content request to: {target_url}")
+        
+        response = requests.get(
+            target_url,
+            headers=get_forwarded_headers(request),
+            stream=True
+        )
+        
+        if response.status_code != 200:
+            return make_response(response.content, response.status_code)
+
+        return Response(
+            response.content,
+            status=200,
+            headers={
+                'Content-Type': response.headers.get('Content-Type', 'application/octet-stream'),
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
+
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error: {str(e)}")
+        return jsonify({'error': 'Share service unavailable'}), 503
+
+@app.route('/share/preview/<path:doc_id>/thumbnail', methods=['GET', 'OPTIONS'])
+def get_shared_thumbnail(doc_id):
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        # Handle undefined or invalid doc_id
+        if doc_id == 'undefined' or not doc_id:
+            # Return a transparent 1x1 pixel as placeholder
+            transparent_pixel = base64.b64decode('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7')
+            return Response(
+                transparent_pixel,
+                status=200,
+                headers={
+                    'Content-Type': 'image/gif',
+                    'Access-Control-Allow-Origin': 'http://localhost:3000',
+                    'Access-Control-Allow-Credentials': 'true',
+                    'Cache-Control': 'no-cache'
+                }
+            )
+
+        service_url = SERVICES['share']
+        target_url = f"{service_url}/share/preview/{doc_id}/thumbnail"
+        
+        print(f"Gateway: Forwarding thumbnail request to: {target_url}")
+        
+        response = requests.get(
+            target_url,
+            headers=get_forwarded_headers(request)
+        )
+        
+        if response.status_code != 200:
+            # Return placeholder for any error
+            transparent_pixel = base64.b64decode('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7')
+            return Response(
+                transparent_pixel,
+                status=200,
+                headers={
+                    'Content-Type': 'image/gif',
+                    'Access-Control-Allow-Origin': 'http://localhost:3000',
+                    'Access-Control-Allow-Credentials': 'true',
+                    'Cache-Control': 'no-cache'
+                }
+            )
+            
+        gateway_response = make_response(response.content)
+        gateway_response.headers['Content-Type'] = response.headers.get('Content-Type', 'image/jpeg')
+        gateway_response.headers['Access-Control-Allow-Origin'] = 'http://localhost:3000'
+        gateway_response.headers['Access-Control-Allow-Credentials'] = 'true'
+        gateway_response.headers['Cache-Control'] = 'no-cache'
+        gateway_response.status_code = response.status_code
+        
+        return gateway_response
+
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error: {str(e)}")
+        # Return placeholder for any error
+        transparent_pixel = base64.b64decode('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7')
+        return Response(
+            transparent_pixel,
+            status=200,
+            headers={
+                'Content-Type': 'image/gif',
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true',
+                'Cache-Control': 'no-cache'
+            }
+        )
+
+@app.route('/docs/file/<int:doc_id>/rename', methods=['PUT', 'OPTIONS'])
+def rename_document(doc_id):
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'PUT,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        # Forward to document service
+        service_url = SERVICES['docs']
+        target_url = f"{service_url}/docs/file/{doc_id}/rename"
+        
+        response = requests.put(
+            target_url,
+            headers=get_forwarded_headers(request),
+            json=request.get_json()
+        )
+        
+        return Response(
+            response.content,
+            status=response.status_code,
+            headers={
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error in rename_document: {str(e)}")
+        return jsonify({'error': 'Document service unavailable'}), 503
+
+@app.route('/share/content/<int:share_id>', methods=['GET', 'OPTIONS'])
+def get_share_content(share_id):
     if request.method == 'OPTIONS':
         response = make_response()
         response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
@@ -1051,8 +1233,8 @@ def get_shared_content(share_id):
         print(f"Gateway error: {str(e)}")
         return jsonify({'error': 'Share service unavailable'}), 503
 
-@app.route('/share/preview/<int:share_id>/thumbnail', methods=['GET', 'OPTIONS'])
-def get_shared_thumbnail(share_id):
+@app.route('/docs/file/<int:doc_id>/metadata', methods=['GET', 'OPTIONS'])
+def get_file_metadata(doc_id):
     if request.method == 'OPTIONS':
         response = make_response()
         response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
@@ -1062,22 +1244,103 @@ def get_shared_thumbnail(share_id):
         return response
 
     try:
-        service_url = SERVICES['share']
-        target_url = f"{service_url}/share/preview/{share_id}/thumbnail"
-        
-        response = requests.get(
-            target_url,
+        user_id = get_user_id_from_token(request.headers.get('Authorization'))
+        if not user_id:
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        # Try to get metadata from docs service first
+        docs_url = f"{SERVICES['docs']}/docs/file/{doc_id}/metadata"
+        docs_response = requests.get(
+            docs_url,
             headers=get_forwarded_headers(request)
         )
-        
-        gateway_response = make_response(response.content)
-        gateway_response.headers['Content-Type'] = response.headers.get('Content-Type', 'image/jpeg')
-        gateway_response.headers['Access-Control-Allow-Origin'] = 'http://localhost:3000'
-        gateway_response.headers['Access-Control-Allow-Credentials'] = 'true'
-        gateway_response.status_code = response.status_code
-        
-        return gateway_response
 
+        # If not found in docs, try shared files
+        if docs_response.status_code == 404:
+            share_url = f"{SERVICES['share']}/share/file/{doc_id}/metadata"
+            share_response = requests.get(
+                share_url,
+                headers=get_forwarded_headers(request)
+            )
+            
+            if share_response.status_code == 200:
+                return Response(
+                    share_response.content,
+                    status=200,
+                    headers={
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': 'http://localhost:3000',
+                        'Access-Control-Allow-Credentials': 'true'
+                    }
+                )
+
+        # Return docs service response if found
+        return Response(
+            docs_response.content,
+            status=docs_response.status_code,
+            headers={
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': 'http://localhost:3000',
+                'Access-Control-Allow-Credentials': 'true'
+            }
+        )
+
+    except requests.exceptions.RequestException as e:
+        print(f"Gateway error: {str(e)}")
+        return jsonify({'error': 'Service unavailable'}), 503
+
+@app.route('/share/file/metadata', methods=['GET', 'OPTIONS'])
+def get_all_shared_metadata():
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
+    try:
+        # Get the original authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'No valid authorization token'}), 401
+
+        token = auth_header.split(' ')[1]
+        secret_key = os.getenv('SECRET_KEY')
+        
+        try:
+            # Decode and modify the token
+            decoded = jwt.decode(token, secret_key, algorithms=['HS256'])
+            decoded['sub'] = str(decoded['user_id'])  # Add sub claim
+            
+            # Create new token
+            new_token = jwt.encode(decoded, secret_key, algorithm='HS256')
+            
+            # Create headers with modified token
+            headers = dict(request.headers)
+            headers['Authorization'] = f'Bearer {new_token}'
+            
+            # Forward to share service
+            share_url = f"{SERVICES['share']}/share/file/metadata"
+            response = requests.get(
+                share_url,
+                headers=headers
+            )
+            
+            return Response(
+                response.content,
+                status=response.status_code,
+                headers={
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': 'http://localhost:3000',
+                    'Access-Control-Allow-Credentials': 'true'
+                }
+            )
+            
+        except jwt.InvalidTokenError as e:
+            print(f"Token validation error: {str(e)}")
+            return jsonify({'error': 'Invalid token'}), 401
+            
     except requests.exceptions.RequestException as e:
         print(f"Gateway error: {str(e)}")
         return jsonify({'error': 'Share service unavailable'}), 503
