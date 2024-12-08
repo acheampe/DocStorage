@@ -74,16 +74,75 @@
    - Handle permissions for shared documents (e.g., view-only, download).
    - Ability to revoke document access.
 
+## System Architecture (UML)
+
+```mermaid
+graph TB
+    subgraph Frontend
+        UI[Next.js Frontend]
+    end
+
+    subgraph Gateway
+        API[API Gateway Service<br/>Port: 5000]
+    end
+
+    subgraph Microservices
+        Auth[Authentication Service<br/>Port: 3001]
+        Doc[Document Management<br/>Port: 3002]
+        Search[Search Service<br/>Port: 3003]
+        Share[Share Service<br/>Port: 3004]
+    end
+
+    subgraph Storage
+        DB[(PostgreSQL<br/>Database)]
+        Files[File System<br/>Storage]
+    end
+
+    %% Frontend to Gateway
+    UI -->|HTTP/REST| API
+
+    %% Gateway to Services
+    API -->|/auth/*| Auth
+    API -->|/docs/*| Doc
+    API -->|/search/*| Search
+    API -->|/share/*| Share
+
+    %% Service to Storage
+    Auth -->|User Data| DB
+    Doc -->|Document Metadata| DB
+    Doc -->|Files| Files
+    Search -->|Index/Query| DB
+    Share -->|Share Records| DB
+
+    %% Cross-service communication
+    Share -.->|Verify Document| Doc
+    Share -.->|Verify Users| Auth
+    Search -.->|Document Info| Doc
+
+    classDef frontend fill:#d4eaff,stroke:#333,stroke-width:2px
+    classDef gateway fill:#ffebcc,stroke:#333,stroke-width:2px
+    classDef service fill:#e6ffe6,stroke:#333,stroke-width:2px
+    classDef storage fill:#ffe6e6,stroke:#333,stroke-width:2px
+
+    class UI frontend
+    class API gateway
+    class Auth,Doc,Search,Share service
+    class DB,Files storage
+```
+
+This UML diagram illustrates:
+- The frontend Next.js application
+- The API Gateway that routes requests
+- Four microservices (Auth, Document Management, Search, and Share)
+- Storage systems (PostgreSQL and File System)
+- Service interactions and dependencies
+- Port assignments for each service
+
 ## Project Structure
 
 ```bash
 docstorage/
 ├── services/
-│   ├── gateway/                # API Gateway Service
-│   │   ├── main.py
-│   │   ├── requirements.txt
-│   │   └── config.py
-│   │
 │   ├── auth_service/          # Authentication Service
 │   │   ├── app/
 │   │   │   ├── __init__.py
@@ -93,14 +152,12 @@ docstorage/
 │   │   │   ├── routes/
 │   │   │   │   ├── __init__.py
 │   │   │   │   └── auth.py
-│   │   │   └── utils/
-│   │   │       ├── __init__.py
-│   │   │       └── jwt_utils.py
+│   │   │   └── extensions.py
 │   │   ├── config.py
 │   │   ├── requirements.txt
 │   │   └── run.py
 │   │
-│   ├── doc_service/           # Document Management Service
+│   ├── doc_mgmt_service/      # Document Management Service
 │   │   ├── app/
 │   │   │   ├── __init__.py
 │   │   │   ├── models/
@@ -111,13 +168,16 @@ docstorage/
 │   │   │   │   └── documents.py
 │   │   │   └── utils/
 │   │   │       ├── __init__.py
-│   │   │       └── file_utils.py
+│   │   │       └── auth.py
 │   │   ├── config.py
 │   │   ├── requirements.txt
 │   │   └── run.py
 │   │
-│   ├── search_service/        # Future Search Service
-│   └── share_service/         # Future Share Service
+│   ├── search_service/        # Search Service
+│   │   └── run.py
+│   │
+│   └── share_service/         # Share Service
+│       └── run.py
 │
 ├── frontend/
 │   ├── src/
@@ -135,28 +195,30 @@ docstorage/
 │   │   ├── components/
 │   │   │   ├── Footer.tsx
 │   │   │   ├── Navigation.tsx
-│   │   │   └── ImagePreview.tsx
+│   │   │   └── ShareModal.tsx
 │   │   └── styles/
 │   │       └── globals.css
 │   ├── public/
 │   │   └── assets/
 │   └── package.json
 │
-├── database/
-│   ├── init.sql              # Database initialization
-│   ├── auth_schema.sql       # Auth service schema
-│   └── doc_schema.sql        # Document service schema
+├── DocStorageDocuments/       # Document storage directory
 │
-├── docs/                     # Documentation
-│   ├── api.md               # API documentation
-│   ├── setup.md             # Setup guide
-│   └── architecture.md      # Architecture details
+├── scripts/                   # Utility scripts
 │
-├── .env.example             # Environment variables template
-├── docker-compose.yml       # Docker configuration
-├── requirements.txt         # Global Python dependencies
-└── README.md               # Project documentation
+├── tests/                     # Test files
+│   └── test_doc_service.py
+│
+├── main.py                    # API Gateway Service
+├── start_services.py          # Service orchestration script
+├── requirements.txt           # Global Python dependencies
+└── README.md                  # Project documentation
 ```
+
+## UML Sequence Diagram
+This UML sequence diagram details the interaction between the main program, reminder microservice, and external APIs (SendGrid and Twilio).
+
+![diagram](./diagram.png)
 
 ## Setup Instructions
 
