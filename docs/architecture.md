@@ -5,22 +5,39 @@
 DocStorage uses a microservices architecture to provide scalable, maintainable, and secure document management capabilities. Each service is independently deployable and maintains its own database schema.
 
 ## Architecture Diagram
-```
-┌─────────────┐     ┌──────────────┐
-│   Frontend  │────▶│  API Gateway │
-└─────────────┘     └──────┬───────┘
-                           │
-           ┌───────────────┼───────────────┐────────────┐
-           ▼               ▼               ▼            ▼
-    ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐
-    │    Auth    │  │  Document  │  │   Search   │  │   Share    │
-    │  Service   │  │  Service   │  │  Service   │  │  Service   │
-    └─────┬──────┘  └─────┬──────┘  └─────┬──────┘  └─────┬─────┘
-          │              │               │                 │
-    ┌─────┴──────┐  ┌────┴─────┐   ┌────┴─────┐    ┌─────┴─────┐
-    │    Auth    │  │   Doc    │   │  Search  │    │   Share   │
-    │    DB      │  │    DB    │   │    DB    │    │    DB     │
-    └────────────┘  └──────────┘   └──────────┘    └───────────┘
+```mermaid
+graph TB
+    subgraph Frontend
+        UI[Next.js Frontend]
+    end
+
+    subgraph Gateway
+        API[API Gateway Service<br/>Port: 5000]
+    end
+
+    subgraph Microservices
+        Auth[Authentication Service<br/>Port: 3001]
+        Doc[Document Management<br/>Port: 3002]
+        Search[Search Service<br/>Port: 3003]
+        Share[Share Service<br/>Port: 3004]
+    end
+
+    subgraph Storage
+        DB[(PostgreSQL<br/>Database)]
+        Files[File System<br/>Storage]
+    end
+
+    UI -->|HTTP/REST| API
+    API -->|/auth/*| Auth
+    API -->|/docs/*| Doc
+    API -->|/search/*| Search
+    API -->|/share/*| Share
+
+    Auth -->|User Data| DB
+    Doc -->|Document Metadata| DB
+    Doc -->|Files| Files
+    Search -->|Index/Query| DB
+    Share -->|Share Records| DB
 ```
 
 ## Service Descriptions
@@ -65,7 +82,7 @@ DocStorage uses a microservices architecture to provide scalable, maintainable, 
   - PostgreSQL
   - Pillow (for image processing)
 
-### 4. Search Service (Port: 3003) [Planned]
+### 4. Search Service (Port: 3003)
 - **Purpose**: Provide document search capabilities
 - **Responsibilities**:
   - Full-text search
@@ -74,14 +91,13 @@ DocStorage uses a microservices architecture to provide scalable, maintainable, 
   - Query optimization
 - **Technologies**:
   - Flask
-  - Elasticsearch (planned)
   - PostgreSQL
 
-### 5. Share Service (Port: 3004) [Planned]
+### 5. Share Service (Port: 3004)
 - **Purpose**: Enable document sharing
 - **Responsibilities**:
   - Access control
-  - Share link generation
+  - Share file 
   - Permission management
   - Share history tracking
 - **Technologies**:

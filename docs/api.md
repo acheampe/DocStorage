@@ -60,7 +60,7 @@ POST /docs/upload
 Content-Type: multipart/form-data
 Authorization: Bearer <token>
 
-file: <file>
+files: <file[]>
 ```
 
 **Response**
@@ -70,6 +70,18 @@ file: <file>
     "doc_id": 1,
     "filename": "document.pdf"
 }
+```
+
+### Get Document Preview
+```http
+GET /docs/file/{doc_id}/preview
+Authorization: Bearer <token>
+```
+
+### Get Document Thumbnail
+```http
+GET /docs/file/{doc_id}/thumbnail
+Authorization: Bearer <token>
 ```
 
 ### Get Recent Documents
