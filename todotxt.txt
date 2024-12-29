@@ -1,10 +1,3 @@
-
-DB services
-- Name: dSAuthService
-- Name: dSDocMgmtService
-- Name: dSDocSearchService
-- Name: dSShareService
-
 TO DOS
 - Work on optimizing thumbnail images in the files page
 - Implement forgot password feature 
@@ -24,5 +17,3 @@ TO DOS
 PRIORITY TODOS:
 - Add intuitive way to return to dashboard page from search results page outside of clearing the search query
 - Add intuitive way to return to files page from search results page outside of clearing the search query
-
-
