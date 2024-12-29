@@ -1,16 +1,10 @@
-
-DB services
-- Name: dSAuthService
-- Name: dSDocMgmtService
-- Name: dSDocSearchService
-- Name: dSShareService
+New Features to ADD:
+- Implement forgot password feature 
 
 TO DOS
 - Work on optimizing thumbnail images in the files page
-- Implement forgot password feature 
 - Work on optimizing thumbnail images in the dashboard
 - Add file descriptions to files page and search functionality
-- Prevent ability to edit file extensions (.docx, .pdf, etc.)
 - Time stamp should be by user local time, not server time
 - Better way to handle duplicate shared files
 - Thumbnails under shared by me and shared with me section should be viewable
@@ -20,9 +14,13 @@ TO DOS
 - Make default recent files into last 8 most recent uploaded files, for aesthetics
 - Add more filter types to search filter (file type, date uploaded, date range)
 - Renamed files can't be found in search results - consider reindexing renamed files route, like with upload/new files
-
-PRIORITY TODOS:
 - Add intuitive way to return to dashboard page from search results page outside of clearing the search query
 - Add intuitive way to return to files page from search results page outside of clearing the search query
 
+PRIORITY TODOS:
+- Prevent ability to edit file extensions (.docx, .pdf, etc.)
 
+DONE:
+- Fixed Inability to render shared with me and shared by me file
+    -- File was not being search for correctly in the share service
+    -- File path was not being returned correctly in the share service

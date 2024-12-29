@@ -34,3 +34,6 @@ truncate_tables.sh
 
 #ignore scripts
 scripts/
+
+#ignore fix_shared_structure.py
+fix_shared_structure.py
