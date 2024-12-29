@@ -1,6 +1,8 @@
+New Features to ADD:
+- Implement forgot password feature 
+
 TO DOS
 - Work on optimizing thumbnail images in the files page
-- Implement forgot password feature 
 - Work on optimizing thumbnail images in the dashboard
 - Add file descriptions to files page and search functionality
 - Prevent ability to edit file extensions (.docx, .pdf, etc.)
@@ -13,7 +15,8 @@ TO DOS
 - Make default recent files into last 8 most recent uploaded files, for aesthetics
 - Add more filter types to search filter (file type, date uploaded, date range)
 - Renamed files can't be found in search results - consider reindexing renamed files route, like with upload/new files
-
-PRIORITY TODOS:
 - Add intuitive way to return to dashboard page from search results page outside of clearing the search query
 - Add intuitive way to return to files page from search results page outside of clearing the search query
+
+PRIORITY TODOS:
+- Fix Inability to render shared with me and shared by me file
