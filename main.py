@@ -596,56 +596,25 @@ def revoke_share(share_id):
         print(f"Gateway error: {str(e)}")
         return jsonify({'error': 'Share service unavailable'}), 503
 
-@app.route('/share/shared-with-me', methods=['GET'])
+@app.route('/share/shared-with-me', methods=['GET', 'OPTIONS'])
 def get_shared_with_me():
-    try:
-        user_id = get_user_id_from_token(request.headers.get('Authorization'))
-        if not user_id:
-            return jsonify({'error': 'Unauthorized'}), 401
+    if request.method == 'OPTIONS':
+        return handle_options_request()
 
-        # Forward to share service
-        share_service_url = SERVICES['share']
-        auth_service_url = SERVICES['auth']
+    try:
+        service_url = SERVICES['share']
+        target_url = f"{service_url}/share/shared-with-me"
+        
+        print(f"Gateway: Forwarding shared-with-me request to: {target_url}")
         
         share_response = requests.get(
-            f"{share_service_url}/share/shared-with-me",
-            params={'recipient_id': user_id},
+            target_url,
             headers=get_forwarded_headers(request)
         )
-       
-        if share_response.status_code == 200:
-            share_data = share_response.json()
-            
-            # Enrich with owner info only
-            for share in share_data.get('shares', []):
-                try:
-                    # Get owner info
-                    owner_response = requests.get(
-                        f"{auth_service_url}/auth/users/{share['owner_id']}",
-                        headers=get_forwarded_headers(request)
-                    )
-                    
-                    if owner_response.status_code == 200:
-                        owner_data = owner_response.json()
-                        share['shared_by'] = owner_data.get('email')
-                    
-                    # Format the date
-                    if share.get('shared_date'):
-                        shared_date = datetime.fromisoformat(share['shared_date'].replace('Z', '+00:00'))
-                        share['shared_date'] = shared_date.strftime('%Y-%m-%d %H:%M:%S')
-                    
-                    # Use display_name and file_path from share record
-                    share.update({
-                        'filename': share.get('display_name'),
-                        'original_filename': share.get('original_filename'),
-                        'file_type': mimetypes.guess_type(share.get('original_filename', ''))[0]
-                    })
-                        
-                except Exception as e:
-                    print(f"Error enriching share data: {str(e)}")
-                    
-            return jsonify(share_data)
-            
+        
+        print(f"Gateway: Share service response: {share_response.status_code}")
+        print(f"Gateway: Share service content: {share_response.content}")
+        
         return Response(
             share_response.content,
             status=share_response.status_code,
@@ -655,95 +624,37 @@ def get_shared_with_me():
                 'Access-Control-Allow-Credentials': 'true'
             }
         )
-        
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         print(f"Gateway error in get_shared_with_me: {str(e)}")
         return jsonify({'error': 'Share service unavailable'}), 503
-    except Exception as e:
-        print(f"Unexpected error in get_shared_with_me: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
 
-def get_jwt_data(auth_header):
-    if not auth_header or not auth_header.startswith('Bearer '):
-        return None
-        
-    token = auth_header.split(' ')[1]
-    try:
-        # Get JWT secret from environment
-        jwt_secret = os.getenv('SECRET_KEY')
-        if not jwt_secret:
-            print("Warning: SECRET_KEY not found in environment")
-            return None
-            
-        return jwt.decode(token, jwt_secret, algorithms=['HS256'])
-    except jwt.InvalidTokenError as e:
-        print(f"Token validation error: {str(e)}")
-        return None
-    except Exception as e:
-        print(f"Unexpected error decoding token: {str(e)}")
-        return None
+def handle_options_request():
+    response = make_response()
+    response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
 
 @app.route('/share/shared-by-me', methods=['GET', 'OPTIONS'])
 def get_shared_by_me():
     if request.method == 'OPTIONS':
-        response = make_response()
-        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
-        response.headers.add('Access-Control-Allow-Credentials', 'true')
-        return response
+        return handle_options_request()
 
     try:
-        user_id = get_user_id_from_token(request.headers.get('Authorization'))
-        if not user_id:
-            return jsonify({'error': 'Unauthorized'}), 401
-
-        # Forward request to share service
-        share_service_url = SERVICES['share']
+        service_url = SERVICES['share']
+        target_url = f"{service_url}/share/shared-by-me"
+        
+        print(f"Gateway: Forwarding shared-by-me request to: {target_url}")
+        
         share_response = requests.get(
-            f"{share_service_url}/share/shared-by-me",
-            headers=get_forwarded_headers(request),
-            params={'owner_id': user_id}
+            target_url,
+            headers=get_forwarded_headers(request)
         )
-
-        if share_response.status_code == 200:
-            share_data = share_response.json()
-            
-            # Get auth service for user lookups
-            auth_service_url = SERVICES['auth']
-            
-            # Enrich with recipient info only
-            for share in share_data.get('shares', []):
-                try:
-                    # Get recipient info
-                    recipient_response = requests.post(
-                        f"{auth_service_url}/auth/user/by-id",
-                        headers=get_forwarded_headers(request),
-                        json={'user_id': share['recipient_id']}
-                    )
-                    
-                    if recipient_response.status_code == 200:
-                        recipient_data = recipient_response.json()
-                        share['shared_with'] = recipient_data.get('email')
-                    
-                    # Format the date
-                    if share.get('shared_date'):
-                        shared_date = datetime.fromisoformat(share['shared_date'].replace('Z', '+00:00'))
-                        share['shared_date'] = shared_date.strftime('%Y-%m-%d')
-                    
-                    # Use metadata from share record
-                    share.update({
-                        'filename': share.get('display_name'),
-                        'original_filename': share.get('original_filename'),
-                        'file_type': mimetypes.guess_type(share.get('original_filename', ''))[0]
-                    })
-                        
-                except Exception as e:
-                    print(f"Error enriching share data: {str(e)}")
-                    continue
-                    
-            return jsonify(share_data)
-            
+        
+        print(f"Gateway: Share service response: {share_response.status_code}")
+        print(f"Gateway: Share service content: {share_response.content}")
+        
         return Response(
             share_response.content,
             status=share_response.status_code,
@@ -753,10 +664,9 @@ def get_shared_by_me():
                 'Access-Control-Allow-Credentials': 'true'
             }
         )
-        
-    except requests.exceptions.RequestException as e:
-        print(f"Gateway error: {str(e)}")
-        return jsonify({'error': 'Service unavailable'}), 503
+    except Exception as e:
+        print(f"Gateway error in get_shared_by_me: {str(e)}")
+        return jsonify({'error': 'Share service unavailable'}), 503
 
 @app.route('/share/<int:share_id>/permissions', methods=['PATCH', 'OPTIONS'])
 def update_share_permissions(share_id):

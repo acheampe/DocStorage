@@ -224,33 +224,72 @@ export default function Dashboard() {
           return;
         }
 
-        // Fetch files shared with me
-        const withMeResponse = await fetch('http://127.0.0.1:5000/share/shared-with-me', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          },
-          credentials: 'include'
-        });
+        if (activeTab === 'shared-with-me' || activeTab === 'shared-by-me') {
+          console.log(`Fetching ${activeTab} files...`);
+          
+          const endpoint = activeTab === 'shared-with-me' 
+            ? 'http://127.0.0.1:5000/share/shared-with-me'
+            : 'http://127.0.0.1:5000/share/shared-by-me';
 
-        // Fetch files shared by me
-        const byMeResponse = await fetch('http://127.0.0.1:5000/share/shared-by-me', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          },
-          credentials: 'include'
-        });
+          const response = await fetch(endpoint, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/json'
+            },
+            credentials: 'include'
+          });
 
-        if (!withMeResponse.ok || !byMeResponse.ok) {
-          throw new Error('Failed to fetch shared files');
+          if (!response.ok) {
+            console.error(`Failed to fetch ${activeTab} files:`, await response.text());
+            throw new Error(`Failed to fetch ${activeTab} files`);
+          }
+
+          const data = await response.json();
+          console.log(`${activeTab} files data:`, data);
+
+          // Transform the data to match the File interface
+          const transformedFiles = (data.shares || []).map((share: any) => ({
+            doc_id: share.doc_id,
+            original_filename: share.original_filename,
+            file_type: share.file_type,
+            shared_date: share.shared_date,
+            share_id: share.share_id,
+            is_shared: true,
+            access_type: share.access_type
+          }));
+
+          // Update the appropriate state
+          if (activeTab === 'shared-with-me') {
+            setSharedWithMeFiles(transformedFiles);
+          } else {
+            setSharedByMeFiles(transformedFiles);
+          }
+
+          // Fetch thumbnails for image files
+          const imageFiles = transformedFiles.filter(file => 
+            file.file_type?.startsWith('image/'));
+          
+          if (imageFiles.length > 0) {
+            const newImageUrls: ImageUrls = { ...imageUrls };
+            
+            for (const file of imageFiles) {
+              try {
+                const thumbnailUrl = await fetchThumbnail(
+                  file.doc_id, 
+                  true, 
+                  file.share_id
+                );
+                if (thumbnailUrl) {
+                  newImageUrls[file.doc_id] = thumbnailUrl;
+                }
+              } catch (error) {
+                console.error(`Error fetching thumbnail for file ${file.doc_id}:`, error);
+              }
+            }
+            
+            setImageUrls(newImageUrls);
+          }
         }
-
-        const withMeData = await withMeResponse.json();
-        const byMeData = await byMeResponse.json();
-
-        // Update state with the fetched data directly without verification
-        setSharedWithMeFiles(withMeData.shares || []);
-        setSharedByMeFiles(byMeData.shares || []);
-
       } catch (error) {
         console.error('Error fetching shared files:', error);
       }
@@ -259,7 +298,7 @@ export default function Dashboard() {
     if (user) {
       fetchSharedFiles();
     }
-  }, [user]);
+  }, [user, activeTab]);
 
   const handleLogout = () => {
     localStorage.removeItem('user');
@@ -427,10 +466,10 @@ export default function Dashboard() {
       }
 
       // Use share endpoints for shared files
-      const endpoint = isSharedWithMe && shareId
-        ? `http://127.0.0.1:5000/share/content/${shareId}`  // New share service endpoint
-        : `http://127.0.0.1:5000/docs/file/${docId}`;      // Existing doc service endpoint
-
+      const endpoint = isSharedWithMe 
+        ? `http://127.0.0.1:5000/share/content/${shareId}`  // Updated endpoint
+        : `http://127.0.0.1:5000/docs/file/${docId}`;
+      
       console.log(`Using endpoint: ${endpoint}`);
       
       // Get file extension
@@ -775,29 +814,33 @@ interface FileCardProps {
 }
 
 function FileCard({ file, imageUrl, onPreview, onShare, isShared }: FileCardProps) {
-  // Helper function to format date
-  const formatDate = (dateString: string | undefined) => {
+  // Add debug logging
+  console.log('FileCard props:', { file, imageUrl, isShared });
+
+  // Format date with null check
+  const formatDate = (dateString: string | undefined | null) => {
     if (!dateString) return 'No date';
-    
-    // Try parsing the date string
-    const date = new Date(dateString);
-    
-    // Check if date is valid
-    if (isNaN(date.getTime())) {
-      console.warn('Invalid date:', dateString);
-      return 'No date';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return 'Invalid date';
     }
-    
-    return date.toLocaleDateString();
   };
 
-  // Get the appropriate date field based on the file type
-  const displayDate = file.shared_date || file.upload_date;
+  // Get the appropriate date field with fallback
+  const displayDate = file.shared_date || file.upload_date || null;
+  const displayName = file.original_filename || 'Untitled';
 
   return (
     <div 
       className="p-4 border-2 border-navy rounded-lg hover:border-gold transition-colors cursor-pointer relative"
-      onClick={onPreview}
+      onClick={() => onPreview()}
     >
       <div className="mb-2">
         {file.file_type?.startsWith('image/') ? (
@@ -805,35 +848,36 @@ function FileCard({ file, imageUrl, onPreview, onShare, isShared }: FileCardProp
             {imageUrl ? (
               <img 
                 src={imageUrl}
-                alt={file.original_filename}
+                alt={displayName}
                 className="w-full h-40 object-cover rounded"
                 onError={(e) => {
+                  // Remove the img element and show icon instead
                   const target = e.target as HTMLImageElement;
-                  target.style.display = 'none';
                   const parent = target.parentElement;
                   if (parent) {
-                    const icon = document.createElement('span');
-                    icon.className = 'material-symbols-rounded text-navy text-4xl';
-                    icon.textContent = getFileIcon(file.original_filename);
-                    parent.appendChild(icon);
+                    parent.innerHTML = `
+                      <span class="material-symbols-rounded text-4xl text-gray-400">
+                        image_not_supported
+                      </span>
+                    `;
                   }
                 }}
               />
             ) : (
-              <span className="material-symbols-rounded text-navy text-4xl animate-pulse">
-                hourglass_empty
+              <span className="material-symbols-rounded text-4xl text-gray-400">
+                image
               </span>
             )}
           </div>
         ) : (
           <div className="w-full h-40 mb-2 flex items-center justify-center bg-gray-50">
-            <span className="material-symbols-rounded text-navy text-4xl">
+            <span className="material-symbols-rounded text-4xl text-gray-400">
               {getFileIcon(file.original_filename)}
             </span>
           </div>
         )}
       </div>
-      <h4 className="font-bold text-navy truncate">{file.original_filename}</h4>
+      <h4 className="font-bold text-navy truncate">{displayName}</h4>
       <div className="flex justify-between items-center mt-2">
         <p className="text-sm text-gray-600">
           {formatDate(displayDate)}

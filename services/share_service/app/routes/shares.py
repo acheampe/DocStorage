@@ -104,40 +104,35 @@ def create_share(current_user):
 @share_bp.route('/share/shared-with-me', methods=['GET'])
 @require_auth
 def get_shared_with_me(current_user):
-    """
-    Get all shares for the current user that are active
-    """
     try:
         recipient_id = current_user['user_id']
-        print(f"Fetching shares for recipient ID: {recipient_id}")
-            
+        print(f"Share Service: Fetching shares for recipient ID: {recipient_id}")
+        
         shares = SharedDocument.query.filter_by(
             recipient_id=recipient_id,
             status='active'
         ).all()
         
-        print(f"Found {len(shares)} shares for recipient")
         share_list = []
-        
         for share in shares:
-            # Use data directly from the share record
-            share_dict = share.to_dict()
-            share_dict.update({
-                'filename': share.original_filename,
-                'file_type': mimetypes.guess_type(share.original_filename)[0],
+            share_dict = {
                 'doc_id': share.doc_id,
-                'owner_id': share.owner_id,
+                'original_filename': share.original_filename,
+                'file_type': mimetypes.guess_type(share.original_filename)[0],
                 'shared_date': share.shared_date.isoformat() if share.shared_date else None,
-                'file_path': share.file_path,
-                'share_id': share.share_id,  # Include share_id for thumbnail access
-                'thumbnail_url': f"/share/preview/{share.share_id}/thumbnail"  # Add thumbnail URL
-            })
+                'owner_id': share.owner_id,
+                'recipient_id': share.recipient_id,
+                'share_id': share.share_id,
+                'file_path': str(share.file_path),
+                'access_type': 'recipient'
+            }
             share_list.append(share_dict)
             
+        print(f"Share Service: Found {len(share_list)} shares")
         return jsonify({'shares': share_list}), 200
         
     except Exception as e:
-        print(f"Error in get_shared_with_me: {str(e)}")
+        print(f"Share Service Error: {str(e)}")
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
@@ -146,42 +141,33 @@ def get_shared_with_me(current_user):
 def get_shared_by_me(current_user):
     try:
         owner_id = current_user['user_id']
-        print(f"Fetching shares by owner ID: {owner_id}")
-            
-        # Get files shared by me
-        shares_by_me = SharedDocument.query.filter_by(
+        print(f"Share Service: Fetching shares by owner ID: {owner_id}")
+        
+        shares = SharedDocument.query.filter_by(
             owner_id=owner_id,
             status='active'
         ).all()
         
-        # Get files shared with me
-        shares_with_me = SharedDocument.query.filter_by(
-            recipient_id=owner_id,
-            status='active'
-        ).all()
-        
-        print(f"Found {len(shares_by_me)} shares by owner and {len(shares_with_me)} shares with owner")
         share_list = []
-        
-        # Process both sets of shares
-        for share in shares_by_me + shares_with_me:
-            share_dict = share.to_dict()
-            share_dict.update({
-                'filename': share.original_filename,
-                'file_type': mimetypes.guess_type(share.original_filename)[0],
+        for share in shares:
+            share_dict = {
                 'doc_id': share.doc_id,
+                'original_filename': share.original_filename,
+                'file_type': mimetypes.guess_type(share.original_filename)[0],
                 'shared_date': share.shared_date.isoformat() if share.shared_date else None,
-                'file_path': share.file_path,
+                'owner_id': share.owner_id,
+                'recipient_id': share.recipient_id,
                 'share_id': share.share_id,
-                'thumbnail_url': f"/share/preview/{share.share_id}/thumbnail",
-                'access_type': 'owner' if share.owner_id == owner_id else 'recipient'
-            })
+                'file_path': str(share.file_path),
+                'access_type': 'owner'
+            }
             share_list.append(share_dict)
             
+        print(f"Share Service: Found {len(share_list)} shares")
         return jsonify({'shares': share_list}), 200
         
     except Exception as e:
-        print(f"Error in get_shared_by_me: {str(e)}")
+        print(f"Share Service Error: {str(e)}")
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
@@ -250,7 +236,7 @@ def get_shared_content(current_user, share_id):
         # Get the file path
         file_path = Path(share.file_path)
         if not file_path.is_absolute():
-            file_path = STORAGE_PATH / str(share.owner_id) / str(share.recipient_id) / f"{share.doc_id}_{share.original_filename}"
+            file_path = STORAGE_PATH / 'shared' / str(share.owner_id) / str(share.recipient_id) / f"{share.doc_id}_{share.original_filename}"
         
         print(f"Share Service: Attempting to serve file from: {file_path}")
         
@@ -429,3 +415,27 @@ def get_all_shared_file_metadata(current_user):
         print(f"Error retrieving shared files metadata: {str(e)}")
         traceback.print_exc()
         return jsonify({'error': 'Internal server error'}), 500 
+
+@share_bp.route('/share/debug/list-all', methods=['GET'])
+@require_auth
+def debug_list_all_shares(current_user):
+    try:
+        all_shares = SharedDocument.query.all()
+        shares_data = [{
+            'share_id': s.share_id,
+            'doc_id': s.doc_id,
+            'owner_id': s.owner_id,
+            'recipient_id': s.recipient_id,
+            'status': s.status,
+            'file_path': s.file_path,
+            'original_filename': s.original_filename
+        } for s in all_shares]
+        
+        return jsonify({
+            'total_shares': len(shares_data),
+            'shares': shares_data
+        }), 200
+    except Exception as e:
+        print(f"Error in debug list: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500 
